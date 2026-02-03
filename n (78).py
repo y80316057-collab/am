@@ -86,12 +86,12 @@ SHIELD_PACKS = [
 ]
 REQUIRED_SUBSCRIPTIONS = [
     {
-        "chat_id": -1003330828421,  # آیدی عددی کانال/گروه اول
+        "chat_id": "@SolarWar_Game",  # آیدی کانال/گروه اول
         "link": "https://t.me/SolarWar_Game",
         "label": "کانال",
     },
     {
-        "chat_id": -1003616173276,  # آیدی عددی کانال/گروه دوم
+        "chat_id": "@SolarWar_Gap",  # آیدی کانال/گروه دوم
         "link": "https://t.me/SolarWar_Gap",
         "label": "گروه",
     },
@@ -616,10 +616,7 @@ def display_name_with_sticker(record: dict, fallback: str = "کاربر") -> str
 
 
 def stylize_title(text: str) -> str:
-    cleaned = (text or "").strip()
-    if not cleaned:
-        return ""
-    return f"«{cleaned}»"
+    return (text or "").strip()
 
 
 def display_name_with_title(record: dict, fallback: str = "کاربر") -> str:
@@ -634,7 +631,7 @@ def format_titles_quote(record: dict) -> str:
     titles = record.get("available_titles") or []
     if not titles:
         return ""
-    lines = [stylize_title(title) for title in titles if stylize_title(title)]
+    lines = [f"> {title}" for title in map(stylize_title, titles) if title]
     return "\n\n" + "\n".join(lines)
 
 
@@ -747,7 +744,7 @@ def format_title_quote(record: dict) -> str:
     if not title:
         return ""
     styled = stylize_title(title)
-    return f"\n{styled}" if styled else ""
+    return f"\n> {styled}" if styled else ""
 
 
 def reply_user_id(update: Update) -> int | None:
