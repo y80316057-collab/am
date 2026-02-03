@@ -616,7 +616,10 @@ def display_name_with_sticker(record: dict, fallback: str = "کاربر") -> str
 
 
 def stylize_title(text: str) -> str:
-    return text
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    return f"«{cleaned}»"
 
 
 def display_name_with_title(record: dict, fallback: str = "کاربر") -> str:
@@ -631,7 +634,7 @@ def format_titles_quote(record: dict) -> str:
     titles = record.get("available_titles") or []
     if not titles:
         return ""
-    lines = [f"> {stylize_title(title)}" for title in titles]
+    lines = [stylize_title(title) for title in titles if stylize_title(title)]
     return "\n\n" + "\n".join(lines)
 
 
@@ -743,7 +746,8 @@ def format_title_quote(record: dict) -> str:
     title = record.get("selected_title")
     if not title:
         return ""
-    return f"\n> {stylize_title(title)}"
+    styled = stylize_title(title)
+    return f"\n{styled}" if styled else ""
 
 
 def reply_user_id(update: Update) -> int | None:
