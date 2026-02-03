@@ -616,7 +616,10 @@ def display_name_with_sticker(record: dict, fallback: str = "کاربر") -> str
 
 
 def stylize_title(text: str) -> str:
-    return text
+    cleaned = (text or "").strip()
+    if not cleaned:
+        return ""
+    return f"«{cleaned}»"
 
 
 def display_name_with_title(record: dict, fallback: str = "کاربر") -> str:
@@ -631,7 +634,7 @@ def format_titles_quote(record: dict) -> str:
     titles = record.get("available_titles") or []
     if not titles:
         return ""
-    lines = [f"> {stylize_title(title)}" for title in titles]
+    lines = [stylize_title(title) for title in titles if stylize_title(title)]
     return "\n\n" + "\n".join(lines)
 
 
@@ -743,7 +746,8 @@ def format_title_quote(record: dict) -> str:
     title = record.get("selected_title")
     if not title:
         return ""
-    return f"\n> {stylize_title(title)}"
+    styled = stylize_title(title)
+    return f"\n{styled}" if styled else ""
 
 
 def reply_user_id(update: Update) -> int | None:
@@ -1615,7 +1619,7 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
         ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
         ["معدن جم 💎", "تبادل سکه 💸", "کلن 👥"],
-        ["راهنما ❓", "پدافند ها 🛡️", "لول آپ پس 🚀"],
+        ["راهنما ❓", "پدافند ها 🛡️"],
         ["پشتیبانی 📞", "سولارپس ⭐", "خرید آیتم 💳"],
         ["شخصی سازی 🎨"],
     ]
@@ -3466,8 +3470,6 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
     record[missile_key] -= 1
     if record.get("missiles", 0) > 0:
         record["missiles"] -= 1
-    add_level_pass_exp(record, missile_key)
-    add_level_pass_exp(record, missile_key)
     context.user_data["awaiting_global_attack_missile"] = False
     blocked, defense_note = resolve_defense(opponent_record, missile_name)
     reward = 0 if blocked else calculate_attack_reward(opponent_record, missile_reward_range(missile_name, missile_key))
@@ -3791,7 +3793,6 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
     attacker_record[missile_key] -= 1
     if attacker_record.get("missiles", 0) > 0:
         attacker_record["missiles"] -= 1
-    add_level_pass_exp(attacker_record, missile_key)
     if is_shield_active(defender_record):
         remaining = shield_remaining_text(defender_record)
         note = f" ({remaining})" if remaining else ""
@@ -4578,8 +4579,37 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/list_assets\n"
         "/reset_caps\n"
         "/create_gift <uses> <amount>\n"
-        "/redeem <code>"
+        "/redeem <code>\n"
+        "/broadcast <message>"
     )
+
+
+async def broadcast_message(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if not is_admin(update.effective_user.id):
+        await admin_only_reply(update, "⛔️ فقط ادمین اجازه این کار رو داره.")
+        return
+    message = " ".join(context.args).strip()
+    if not message and update.message.reply_to_message is not None:
+        reply = update.message.reply_to_message
+        message = (reply.text or reply.caption or "").strip()
+    if not message:
+        await admin_only_reply(update, "فرمت: /broadcast <message> (یا ریپلای بدون آرگومان)")
+        return
+    sent = 0
+    failed = 0
+    for record in user_data_store.values():
+        user_id = record.get("id")
+        if user_id is None:
+            continue
+        try:
+            await context.bot.send_message(chat_id=int(user_id), text=message)
+            sent += 1
+        except Exception:
+            failed += 1
+    log_admin_action(update.effective_user.id, update.effective_user.id, "ارسال پیام همگانی")
+    await admin_only_reply(update, f"✅ پیام ارسال شد. موفق: {sent} | ناموفق: {failed}")
 
 
 async def store_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5719,7 +5749,6 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
     record[missile_key] -= 1
     if record.get("missiles", 0) > 0:
         record["missiles"] -= 1
-    add_level_pass_exp(record, missile_key)
     damage = missile_damage(missile_name, missile_key) + clan_tank_bonus(record)
     clan_id = war.get("user_clan_map", {}).get(record.get("id"))
     if clan_id is None:
@@ -7240,20 +7269,21 @@ async def reset_solarpass_all(update: Update, context: ContextTypes.DEFAULT_TYPE
     reset_count = 0
     for record in user_data_store.values():
         if record.get("starpass_active"):
+            record["starpass_active"] = False
             record["starpass_day"] = 1
             record["starpass_last_claim"] = None
-            record["starpass_started_at"] = datetime.now().isoformat()
+            record["starpass_started_at"] = None
             user_id = record.get("id")
             if user_id is not None:
-                log_admin_action(user_id, update.effective_user.id, "ریست سولارپس (همه)")
+                log_admin_action(user_id, update.effective_user.id, "حذف سولارپس (همه)")
             reset_count += 1
     save_user_data_store()
     await notify_primary_admin_of_action(
         context,
         update.effective_user.id,
-        f"ℹ️ ادمین {update.effective_user.id} سولارپس {reset_count} کاربر را ریست کرد.",
+        f"ℹ️ ادمین {update.effective_user.id} سولارپس {reset_count} کاربر را حذف کرد.",
     )
-    await admin_only_reply(update, f"✅ سولارپس {reset_count} کاربر به روز اول ریست شد.")
+    await admin_only_reply(update, f"✅ سولارپس {reset_count} کاربر حذف شد.")
 
 
 async def admin_history(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7624,6 +7654,7 @@ def main():
     app.add_handler(CommandHandler("remove_missile", remove_missile))
     app.add_handler(CommandHandler("remove_all_patriot", remove_all_patriot))
     app.add_handler(CommandHandler("grant_solarpass", grant_solarpass))
+    app.add_handler(CommandHandler("broadcast", broadcast_message))
     app.add_handler(CommandHandler("give_missile", give_missile))
     app.add_handler(CommandHandler("admin_protection_on", admin_protection_on))
     app.add_handler(CommandHandler("admin_protection_off", admin_protection_off))
@@ -7700,7 +7731,6 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^خرید سولارپس 🛒$"), starpass_purchase))
     app.add_handler(MessageHandler(filters.Regex("^دریافت جوایز 🎁$"), starpass_rewards))
     app.add_handler(MessageHandler(filters.Regex("^شخصی سازی 🎨$"), customization_menu))
-    app.add_handler(MessageHandler(filters.Regex("^لول آپ پس 🚀$"), level_pass_menu))
     app.add_handler(MessageHandler(filters.Regex("^جستجو کلن 🔍$"), clan_search_menu))
     app.add_handler(MessageHandler(filters.Regex("^ساخت کلن 🏗️$"), clan_create_menu))
     app.add_handler(MessageHandler(filters.Regex("^اعضا 👥$"), clan_members_menu))
