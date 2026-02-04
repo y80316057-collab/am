@@ -105,6 +105,14 @@ DEFENSE_ITEMS = [
     {"key": "s400_defense", "label": "اس 400", "price": 3000, "level": 15, "chance": 70},
     {"key": "hq22_defense", "label": "اچ‌کیو-22", "price": 5000, "level": 18, "chance": 80},
 ]
+CYBER_ATTACK_COST = 1000
+CYBER_ATTACK_SUCCESS_RATE = 30
+CYBER_ATTACK_BLOCK_MINUTES = 5
+CYBER_DEFENSE_ITEMS = [
+    {"key": "cyber_defense_1", "label": "سایبری-1", "price": 150, "reduction": 4},
+    {"key": "cyber_defense_2", "label": "سایبری-2", "price": 1000, "reduction": 12},
+    {"key": "cyber_defense_3", "label": "سایبری-3", "price": 2000, "reduction": 20},
+]
 CLAN_CREATE_COST = 3000
 CLAN_LEVEL_COSTS = {2: 10000, 3: 15000, 4: 25000, 5: 50000}
 CLAN_TANK_PURCHASE_COST = 100000
@@ -235,16 +243,16 @@ CRYSTAL_LEAGUE_NAME = "🔮 کریستال"
 STARPASS_COST = 50
 STARPASS_RESET_TIME = time(3, 30)
 STARPASS_REWARDS = [
-    {"day": 1, "label": "15 عماد", "missiles": {"emad_missiles": 15}},
-    {"day": 2, "label": "400 اس", "coins": 400},
+    {"day": 1, "label": "10 اطلس", "missiles": {"atlas_missiles": 10}},
+    {"day": 2, "label": "5 ارو", "defenses": {"arrow_defense": 5}},
     {"day": 3, "label": "2000 سکه", "coins": 2000},
     {"day": 4, "label": "100 تجربه", "experience": 100},
-    {"day": 5, "label": "10 خرمشهر", "missiles": {"khorramshahr_missiles": 10}},
-    {"day": 6, "label": "5 ردلاین", "missiles": {"redline_missiles": 5}},
-    {"day": 7, "label": "10 اچ‌کیو-9", "defenses": {"hq9_defense": 10}},
-    {"day": 8, "label": "5 هسته‌ای", "missiles": {"nuclear_missiles": 5}},
+    {"day": 5, "label": "10 الماس", "gems": 10},
+    {"day": 6, "label": "5 هسته‌ای", "missiles": {"nuclear_missiles": 5}},
+    {"day": 7, "label": "3 اچ‌کیو-9", "defenses": {"hq9_defense": 3}},
+    {"day": 8, "label": "25 الماس", "gems": 25},
     {"day": 9, "label": "10000 سکه", "coins": 10000},
-    {"day": 10, "label": "تایتل SolarVIP", "title": "SolarVIP"},
+    {"day": 10, "label": "50 جم", "gems": 50},
 ]
 STARPASS_CHAT_STICKERS = [
     ("🔥 استیکر آتش", "🔥"),
@@ -449,6 +457,7 @@ def get_user_record(user_id: int) -> dict:
             "tufan_missiles": 0,
             "almas_missiles": 0,
             "patriot_missiles": 0,
+            "cyber_attacks": 0,
             "tirbar_defense": 0,
             "aegis_defense": 0,
             "panster_defense": 0,
@@ -457,6 +466,11 @@ def get_user_record(user_id: int) -> dict:
             "s400_defense": 0,
             "hq22_defense": 0,
             "active_defense": None,
+            "cyber_defense_1": 0,
+            "cyber_defense_2": 0,
+            "cyber_defense_3": 0,
+            "active_cyber_defense": None,
+            "cyber_block_until": None,
             "daily_coin_transfer": 0,
             "daily_duels_started": 0,
             "last_duel_day": None,
@@ -530,6 +544,7 @@ def get_user_record(user_id: int) -> dict:
         "tufan_missiles": 0,
         "almas_missiles": 0,
         "patriot_missiles": 0,
+        "cyber_attacks": 0,
         "tirbar_defense": 0,
         "aegis_defense": 0,
         "panster_defense": 0,
@@ -538,6 +553,11 @@ def get_user_record(user_id: int) -> dict:
         "s400_defense": 0,
         "hq22_defense": 0,
         "active_defense": None,
+        "cyber_defense_1": 0,
+        "cyber_defense_2": 0,
+        "cyber_defense_3": 0,
+        "active_cyber_defense": None,
+        "cyber_block_until": None,
         "daily_coin_transfer": 0,
         "daily_duels_started": 0,
         "last_duel_day": None,
@@ -942,6 +962,11 @@ def reset_purchase_flags(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data["awaiting_emad_quantity"] = False
     context.user_data["awaiting_tirbar_quantity"] = False
     context.user_data["awaiting_defense_quantity"] = False
+    context.user_data["awaiting_cyber_attack_quantity"] = False
+    context.user_data["awaiting_cyber_defense_quantity"] = False
+    context.user_data["cyber_defense_key"] = None
+    context.user_data["cyber_defense_price"] = None
+    context.user_data["cyber_defense_label"] = None
     context.user_data["awaiting_chemical_quantity"] = False
     context.user_data["awaiting_nuclear_quantity"] = False
     context.user_data["awaiting_topup_receipt"] = False
@@ -975,6 +1000,10 @@ def format_owned_missiles(record: dict) -> str:
         if owned_items:
             lines.append(title)
             lines.extend(owned_items)
+    cyber_count = record.get("cyber_attacks", 0)
+    if cyber_count > 0:
+        lines.append("سایبری 💻")
+        lines.append(f"• حمله سایبری: {cyber_count}")
     if len(lines) == 1:
         return "موشکی ندارید."
     return "\n".join(lines)
@@ -990,8 +1019,24 @@ def format_owned_defenses(record: dict) -> str:
     active_item = next((item for item in DEFENSE_ITEMS if item["key"] == active), None)
     active_label = f"{active_item['label']} 🛡️" if active_item else "هیچ"
     lines.append(f"• پدافند فعال: {active_label}")
-    if len(lines) == 2 and lines[1].endswith("هیچ"):
+    cyber_lines = ["پدافندهای سایبری:"]
+    for item in CYBER_DEFENSE_ITEMS:
+        count = record.get(item["key"], 0)
+        if count > 0:
+            cyber_lines.append(f"• {item['label']} 💻: {count}")
+    cyber_active = record.get("active_cyber_defense")
+    cyber_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == cyber_active), None)
+    cyber_label = f"{cyber_item['label']} 💻" if cyber_item else "هیچ"
+    cyber_lines.append(f"• پدافند سایبری فعال: {cyber_label}")
+    has_regular = len(lines) > 2 or not lines[1].endswith("هیچ")
+    has_cyber = len(cyber_lines) > 2 or not cyber_lines[1].endswith("هیچ")
+    if not has_regular and not has_cyber:
         return "پدافندی ندارید."
+    if has_regular and has_cyber:
+        lines.append("")
+        lines.extend(cyber_lines)
+    elif has_cyber:
+        lines = cyber_lines
     return "\n".join(lines)
 
 
@@ -1481,6 +1526,71 @@ def resolve_defense(defender: dict, missile_name: str) -> tuple[bool, str]:
     return False, "⚠️ پدافند نتوانست موشک را مهار کند."
 
 
+def resolve_cyber_defense(defender: dict) -> tuple[int, str]:
+    active_defense = defender.get("active_cyber_defense")
+    active_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == active_defense), None)
+    if not active_item:
+        return 0, "⚠️ پدافند سایبری فعال نیست."
+    if defender.get(active_item["key"], 0) <= 0:
+        defender["active_cyber_defense"] = None
+        return 0, "⚠️ پدافند سایبری ندارید."
+    defender[active_item["key"]] -= 1
+    if defender.get(active_item["key"], 0) <= 0:
+        defender["active_cyber_defense"] = None
+    return active_item["reduction"], f"🛡️ پدافند سایبری {active_item['label']} فعال شد."
+
+
+def cyber_block_remaining(record: dict) -> timedelta | None:
+    until = record.get("cyber_block_until")
+    if not until:
+        return None
+    try:
+        end_time = datetime.fromisoformat(until)
+    except ValueError:
+        record["cyber_block_until"] = None
+        return None
+    remaining = end_time - datetime.now()
+    if remaining.total_seconds() <= 0:
+        record["cyber_block_until"] = None
+        return None
+    return remaining
+
+
+def cyber_block_remaining_text(record: dict) -> str:
+    remaining = cyber_block_remaining(record)
+    if not remaining:
+        return ""
+    total_seconds = int(remaining.total_seconds())
+    minutes = total_seconds // 60
+    seconds = total_seconds % 60
+    if minutes <= 0:
+        return f"{seconds} ثانیه"
+    return f"{minutes} دقیقه و {seconds} ثانیه"
+
+
+def is_cyber_blocked(record: dict) -> bool:
+    return cyber_block_remaining(record) is not None
+
+
+def apply_cyber_block(defender: dict) -> None:
+    until = datetime.now() + timedelta(minutes=CYBER_ATTACK_BLOCK_MINUTES)
+    defender["cyber_block_until"] = until.isoformat()
+
+
+def is_cyber_attack_name(name: str) -> bool:
+    normalized = normalize_missile_name(name)
+    return "سایبری" in normalized
+
+
+def perform_cyber_attack(attacker: dict, defender: dict) -> tuple[bool, str, int]:
+    reduction, defense_note = resolve_cyber_defense(defender)
+    chance = max(0, CYBER_ATTACK_SUCCESS_RATE - reduction)
+    success = random.randint(1, 100) <= chance
+    if success:
+        apply_cyber_block(defender)
+    return success, defense_note, chance
+
+
 def is_shield_active(record: dict) -> bool:
     shield_until = record.get("shield_until")
     if not shield_until:
@@ -1616,9 +1726,8 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
         ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
         ["معدن جم 💎", "تبادل سکه 💸", "کلن 👥"],
-        ["راهنما ❓", "پدافند ها 🛡️"],
-        ["پشتیبانی 📞", "سولارپس ⭐", "خرید آیتم 💳"],
-        ["شخصی سازی 🎨"],
+        ["راهنما ❓", "پشتیبانی 📞", "خرید آیتم 💳"],
+        ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
     ]
     if user_id is not None and is_admin(user_id):
         keyboard.append(["پنل ادمین 🛠️"])
@@ -1682,8 +1791,8 @@ def coin_pack_choice_markup() -> ReplyKeyboardMarkup:
 
 def store_menu_markup() -> ReplyKeyboardMarkup:
     keyboard = [
-        ["موشک 🚀"],
-        ["پدافند 🛡️"],
+        ["موشک 🚀", "پدافند 🛡️"],
+        ["سایبری 💻", "پدافند های سایبری 🛡️"],
         ["سپر 🛡️"],
         ["بازگشت به منوی اصلی ↩️"],
     ]
@@ -1787,6 +1896,36 @@ def format_defense_report(
         f"💰 سکه از دست رفته: {defender_coin_loss}\n"
         f"🏆 رنک: ⬆️ +{attacker_rank_delta} برای مهاجم | ➖ -{defender_rank_delta} برای مدافع\n"
         f"⏰ {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+
+def format_cyber_attack_report(
+    attacker: dict,
+    defender: dict,
+    success: bool,
+    chance: int,
+    defense_note: str,
+    timestamp: datetime,
+) -> str:
+    attacker_name = display_name_with_sticker(attacker, "کاربر")
+    defender_name = display_name_with_sticker(defender, "کاربر")
+    result_line = "✅ هک موفق بود." if success else "❌ هک ناموفق بود."
+    duration_line = (
+        f"⏳ مدت اختلال: {CYBER_ATTACK_BLOCK_MINUTES} دقیقه" if success else "⏳ مدت اختلال: بدون اثر"
+    )
+    defense_line = defense_note or "⚠️ پدافند سایبری فعال نبود."
+    return (
+        "💻💥 حمله سایبری! 💥💻\n\n"
+        f"👤 مهاجم: {attacker_name}\n"
+        f"🛡️ مدافع: {defender_name}\n\n"
+        "نوع حمله: سایبری 💻\n"
+        f"نتیجه: {result_line}\n"
+        f"🎲 شانس موفقیت: {chance}%\n"
+        f"{duration_line}\n\n"
+        f"{defense_line}\n\n"
+        "💰 سکه‌ها: بدون تغییر\n"
+        "🏆 رنک: بدون تغییر\n\n"
+        f"⏰ تاریخ و ساعت: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
 
@@ -1944,6 +2083,7 @@ def defense_status_menu_markup(record: dict) -> ReplyKeyboardMarkup:
     for item in DEFENSE_ITEMS:
         if record.get(item["key"], 0) > 0:
             keyboard.append([f"فعال کردن {item['label']} 🛡️"])
+    keyboard.append(["مدیریت پدافند سایبری 🛡️"])
     keyboard.append(["غیرفعال کردن پدافند ❌"])
     keyboard.append(["بازگشت به منوی اصلی ↩️"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -2702,6 +2842,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if context.user_data.get("awaiting_defense_quantity"):
         await handle_defense_quantity(update, context)
         return
+    if context.user_data.get("awaiting_cyber_attack_quantity"):
+        await handle_cyber_attack_quantity(update, context)
+        return
+    if context.user_data.get("awaiting_cyber_defense_quantity"):
+        await handle_cyber_defense_quantity(update, context)
+        return
     if context.user_data.get("awaiting_chemical_quantity"):
         await handle_chemical_quantity(update, context)
         return
@@ -3332,6 +3478,11 @@ async def global_attack_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     update_league(record)
     now = datetime.now()
     allowed, remaining = can_open_global_attack(record, now)
@@ -3372,6 +3523,11 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        await query.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     update_league(record)
     if query.data == "global_attack_reroll":
         if record["coins"] < GLOBAL_ATTACK_REROLL_COST:
@@ -3402,8 +3558,8 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
         await query.message.reply_text("❌ نمی‌توانید به خودتان حمله کنید.")
         return
     choices = owned_missile_choices(record)
-    if not choices:
-        await query.message.reply_text("❌ موشکی برای حمله ندارید.")
+    if not choices and record.get("cyber_attacks", 0) <= 0:
+        await query.message.reply_text("❌ موشک یا حمله سایبری برای حمله ندارید.")
         return
     context.user_data["awaiting_support_message"] = False
     context.user_data["awaiting_coin_transfer_target"] = False
@@ -3428,6 +3584,12 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         await update.message.reply_text("❌ اسم موشک را وارد کنید.")
         return
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        context.user_data["awaiting_global_attack_missile"] = False
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     opponent = context.user_data.get("current_opponent")
     opponent_id = opponent.get("id") if isinstance(opponent, dict) else None
     if opponent_id is None or opponent_id == update.effective_user.id:
@@ -3456,6 +3618,37 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         remaining = shield_remaining_text(opponent_record)
         note = f" ({remaining})" if remaining else ""
         await update.message.reply_text(f"❌ این بازیکن سپر فعال دارد{note}.")
+        return
+    if is_cyber_attack_name(missile_name):
+        if record.get("cyber_attacks", 0) <= 0:
+            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            return
+        record["cyber_attacks"] -= 1
+        context.user_data["awaiting_global_attack_missile"] = False
+        success, defense_note, chance = perform_cyber_attack(record, opponent_record)
+        if success:
+            opponent_record["last_attack_from"] = update.effective_user.id
+            add_revenge_target(opponent_record, update.effective_user.id)
+        apply_crystal_attack_limits(record, opponent_record)
+        save_user_data_store()
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=record,
+            defender=opponent_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
+        )
+        await context.bot.send_message(
+            chat_id=opponent_id,
+            text=report,
+            reply_markup=revenge_inline_markup(update.effective_user.id) if success else None,
+        )
+        await update.message.reply_text(
+            report,
+            reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
+        )
         return
     missile_key = find_missile_key(missile_name)
     if missile_key is None:
@@ -3758,6 +3951,11 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است و نمی‌توانید حمله کنید.")
         return
     attacker_record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(attacker_record):
+        remaining = cyber_block_remaining_text(attacker_record)
+        note = f" تا {remaining}" if remaining else ""
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     update_league(attacker_record)
     update_league(target_record)
     duel = get_duel_between(update.effective_chat.id, update.effective_user.id, target_user.id)
@@ -3767,13 +3965,18 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         if not allowed:
             await update.message.reply_text(limit_message)
             return
-    missile_key = find_missile_key(missile_name)
-    if missile_key is None:
-        await update.message.reply_text("❌ موشک مورد نظر یافت نشد.")
-        return
-    if attacker_record.get(missile_key, 0) <= 0:
-        await update.message.reply_text("❌ از این موشک موجودی ندارید.")
-        return
+    if is_cyber_attack_name(missile_name):
+        if attacker_record.get("cyber_attacks", 0) <= 0:
+            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            return
+    else:
+        missile_key = find_missile_key(missile_name)
+        if missile_key is None:
+            await update.message.reply_text("❌ موشک مورد نظر یافت نشد.")
+            return
+        if attacker_record.get(missile_key, 0) <= 0:
+            await update.message.reply_text("❌ از این موشک موجودی ندارید.")
+            return
     defender_record = target_record
     now = datetime.now()
     last_attack_time = attacker_record.get("last_group_attack")
@@ -3787,13 +3990,41 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         except Exception:
             pass
     attacker_record["last_group_attack"] = now.isoformat()
-    attacker_record[missile_key] -= 1
-    if attacker_record.get("missiles", 0) > 0:
-        attacker_record["missiles"] -= 1
+    if is_cyber_attack_name(missile_name):
+        attacker_record["cyber_attacks"] -= 1
+    else:
+        attacker_record[missile_key] -= 1
+        if attacker_record.get("missiles", 0) > 0:
+            attacker_record["missiles"] -= 1
     if is_shield_active(defender_record):
         remaining = shield_remaining_text(defender_record)
         note = f" ({remaining})" if remaining else ""
         await update.message.reply_text(f"❌ این بازیکن سپر فعال دارد{note}.")
+        return
+    if is_cyber_attack_name(missile_name):
+        success, defense_note, chance = perform_cyber_attack(attacker_record, defender_record)
+        if duel is None:
+            apply_crystal_attack_limits(attacker_record, defender_record)
+        defender_record["last_attack_from"] = update.effective_user.id
+        add_revenge_target(defender_record, update.effective_user.id)
+        save_user_data_store()
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=attacker_record,
+            defender=defender_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
+        )
+        await update.message.reply_text(report)
+        defender_report = report
+        await notify_user(
+            context,
+            target_user.id,
+            defender_report,
+            reply_markup=revenge_inline_markup(update.effective_user.id) if success else None,
+        )
         return
     blocked, defense_note = resolve_defense(defender_record, missile_name)
     reward = 0 if blocked else calculate_attack_reward(defender_record, missile_reward_range(missile_name, missile_key))
@@ -4667,6 +4898,47 @@ async def defense_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     )
 
 
+async def cyber_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    reset_purchase_flags(context)
+    record = get_user_record(update.effective_user.id)
+    rows = [
+        [f"حمله سایبری 💻 - {CYBER_ATTACK_COST}"],
+        ["بازگشت به منوی فروشگاه ↩️"],
+    ]
+    await update.message.reply_text(
+        "💻 فروشگاه سایبری\n"
+        f"💰 سکه‌های شما: {record['coins']}\n"
+        f"📦 حمله‌های سایبری شما: {record.get('cyber_attacks', 0)}\n\n"
+        "🔻 گزینه مورد نظر را انتخاب کنید:",
+        reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True),
+    )
+
+
+async def cyber_defense_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    reset_purchase_flags(context)
+    record = get_user_record(update.effective_user.id)
+    rows = [[f"{item['label']} 🛡️ - {item['price']}"] for item in CYBER_DEFENSE_ITEMS]
+    rows.append(["بازگشت به منوی فروشگاه ↩️"])
+    await update.message.reply_text(
+        "💻 فروشگاه پدافندهای سایبری\n"
+        f"💰 سکه‌های شما: {record['coins']}\n\n"
+        "🔻 پدافند سایبری مورد نظر را انتخاب کنید:",
+        reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True),
+    )
+
+
 async def defense_status_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None or update.effective_user is None:
         return
@@ -4682,6 +4954,9 @@ async def defense_status_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     active = record.get("active_defense")
     active_item = next((item for item in DEFENSE_ITEMS if item["key"] == active), None)
     active_label = f"{active_item['label']} 🛡️" if active_item else "هیچ"
+    cyber_active = record.get("active_cyber_defense")
+    cyber_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == cyber_active), None)
+    cyber_label = f"{cyber_item['label']} 💻" if cyber_item else "هیچ"
     counts = "\n".join(
         f"• {item['label']} 🛡️: {record.get(item['key'], 0)}"
         for item in DEFENSE_ITEMS
@@ -4691,10 +4966,82 @@ async def defense_status_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     await update.message.reply_text(
         "🛡️ پدافندهای شما:\n"
         f"{counts_text}\n"
-        f"• پدافند فعال: {active_label}\n\n"
+        f"• پدافند فعال: {active_label}\n"
+        f"• پدافند سایبری فعال: {cyber_label}\n\n"
         "از منو انتخاب کنید:",
         reply_markup=defense_status_menu_markup(record),
     )
+
+
+def cyber_defense_status_menu_markup(record: dict) -> ReplyKeyboardMarkup:
+    keyboard = []
+    for item in CYBER_DEFENSE_ITEMS:
+        if record.get(item["key"], 0) > 0:
+            keyboard.append([f"فعال کردن پدافند سایبری {item['label']} 💻"])
+    keyboard.append(["غیرفعال کردن پدافند سایبری ❌"])
+    keyboard.append(["بازگشت به منوی پدافند ↩️"])
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+async def cyber_defense_status_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    reset_purchase_flags(context)
+    record = get_user_record(update.effective_user.id)
+    active = record.get("active_cyber_defense")
+    active_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == active), None)
+    active_label = f"{active_item['label']} 💻" if active_item else "هیچ"
+    counts = "\n".join(
+        f"• {item['label']} 💻: {record.get(item['key'], 0)}"
+        for item in CYBER_DEFENSE_ITEMS
+        if record.get(item["key"], 0) > 0
+    )
+    counts_text = counts if counts else "• هیچ پدافند سایبری ندارید."
+    await update.message.reply_text(
+        "💻 پدافندهای سایبری شما:\n"
+        f"{counts_text}\n"
+        f"• پدافند سایبری فعال: {active_label}\n\n"
+        "از منو انتخاب کنید:",
+        reply_markup=cyber_defense_status_menu_markup(record),
+    )
+
+
+async def cyber_defense_activate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    text = (update.message.text or "").strip()
+    label = text.replace("فعال کردن پدافند سایبری", "").replace("💻", "").strip()
+    item = next((entry for entry in CYBER_DEFENSE_ITEMS if entry["label"] == label), None)
+    if not item:
+        return
+    record = get_user_record(update.effective_user.id)
+    if record.get(item["key"], 0) <= 0:
+        await update.message.reply_text("❌ این پدافند سایبری را ندارید.")
+        return
+    record["active_cyber_defense"] = item["key"]
+    save_user_data_store()
+    await update.message.reply_text(f"✅ پدافند سایبری {item['label']} فعال شد.")
+
+
+async def cyber_defense_deactivate(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    record["active_cyber_defense"] = None
+    save_user_data_store()
+    await update.message.reply_text("✅ پدافند سایبری غیرفعال شد.")
 
 
 async def defense_activate_tirbar(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -4862,6 +5209,11 @@ async def revenge_attack_action(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        await query.edit_message_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     data = query.data or ""
     try:
         attacker_id = int(data.split("_", 1)[1])
@@ -4906,6 +5258,11 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
         return
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     if user_in_active_duel(record.get("id")) or user_in_active_duel(int(target_id)):
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است.")
         return
@@ -4917,21 +5274,53 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text(limit_message)
         return
     remove_single_revenge_target(record, target_id)
-    missile_key = find_missile_key(missile_name)
-    if missile_key is None:
-        await update.message.reply_text("❌ موشک مورد نظر یافت نشد.")
-        return
-    if record.get(missile_key, 0) <= 0:
-        await update.message.reply_text("❌ از این موشک موجودی ندارید.")
-        return
-    record[missile_key] -= 1
-    if record.get("missiles", 0) > 0:
-        record["missiles"] -= 1
+    if is_cyber_attack_name(missile_name):
+        if record.get("cyber_attacks", 0) <= 0:
+            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            return
+    else:
+        missile_key = find_missile_key(missile_name)
+        if missile_key is None:
+            await update.message.reply_text("❌ موشک مورد نظر یافت نشد.")
+            return
+        if record.get(missile_key, 0) <= 0:
+            await update.message.reply_text("❌ از این موشک موجودی ندارید.")
+            return
+        record[missile_key] -= 1
+        if record.get("missiles", 0) > 0:
+            record["missiles"] -= 1
+    if is_cyber_attack_name(missile_name):
+        record["cyber_attacks"] -= 1
     target_record = get_user_record(int(target_id))
     if is_shield_active(target_record):
         remaining = shield_remaining_text(target_record)
         note = f" ({remaining})" if remaining else ""
         await update.message.reply_text(f"❌ این بازیکن سپر فعال دارد{note}.")
+        return
+    if is_cyber_attack_name(missile_name):
+        success, defense_note, chance = perform_cyber_attack(record, target_record)
+        if success:
+            target_record["last_attack_from"] = update.effective_user.id
+            add_revenge_target(target_record, update.effective_user.id)
+        apply_crystal_attack_limits(record, target_record)
+        save_user_data_store()
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=record,
+            defender=target_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
+        )
+        await update.message.reply_text(report)
+        defense_report = report
+        await notify_user(
+            context,
+            int(target_id),
+            defense_report,
+            reply_markup=revenge_inline_markup(update.effective_user.id) if success else None,
+        )
         return
     blocked, defense_note = resolve_defense(target_record, missile_name)
     reward = 0 if blocked else calculate_attack_reward(target_record, missile_reward_range(missile_name, missile_key))
@@ -5684,6 +6073,11 @@ async def clan_war_attack_prompt(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⏰ زمان کلن وار تمام شد و نتیجه محاسبه شد.")
         return
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     attacks_left = record.get("clan_war_attacks_left", 0)
     if attacks_left <= 0:
         await update.message.reply_text("❌ حمله‌های شما در کلن وار تمام شده است.")
@@ -5731,10 +6125,20 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⏰ زمان کلن وار تمام شد و نتیجه محاسبه شد.")
         return
     record = get_user_record(update.effective_user.id)
+    if is_cyber_blocked(record):
+        remaining = cyber_block_remaining_text(record)
+        note = f" تا {remaining}" if remaining else ""
+        context.user_data["awaiting_clan_war_attack"] = False
+        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        return
     attacks_left = record.get("clan_war_attacks_left", 0)
     if attacks_left <= 0:
         context.user_data["awaiting_clan_war_attack"] = False
         await update.message.reply_text("❌ حمله‌های شما در کلن وار تمام شده است.")
+        return
+    if is_cyber_attack_name(missile_name):
+        context.user_data["awaiting_clan_war_attack"] = False
+        await update.message.reply_text("❌ حمله سایبری در کلن وار قابل استفاده نیست.")
         return
     missile_key = find_missile_key(missile_name)
     if missile_key is None:
@@ -6329,6 +6733,54 @@ async def defense_purchase_prompt(update: Update, context: ContextTypes.DEFAULT_
     )
 
 
+async def cyber_attack_purchase_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_not_private(update):
+        return
+    reset_purchase_flags(context)
+    record = get_user_record(update.effective_user.id)
+    context.user_data["awaiting_cyber_attack_quantity"] = True
+    await update.message.reply_text(
+        "💻 خرید حمله سایبری\n"
+        f"💰 قیمت هر واحد: {CYBER_ATTACK_COST} سکه\n"
+        f"📦 حداکثر خرید با موجودی شما: {record['coins'] // CYBER_ATTACK_COST}\n\n"
+        "تعداد مورد نظر خود را وارد کنید:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["بازگشت به منوی فروشگاه ↩️"]], resize_keyboard=True
+        ),
+    )
+
+
+async def cyber_defense_purchase_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_not_private(update):
+        return
+    text = (update.message.text or "").strip()
+    item = next(
+        (entry for entry in CYBER_DEFENSE_ITEMS if text == f"{entry['label']} 🛡️ - {entry['price']}"),
+        None,
+    )
+    if not item:
+        return
+    reset_purchase_flags(context)
+    context.user_data["cyber_defense_key"] = item["key"]
+    context.user_data["cyber_defense_price"] = item["price"]
+    context.user_data["cyber_defense_label"] = item["label"]
+    context.user_data["awaiting_cyber_defense_quantity"] = True
+    record = get_user_record(update.effective_user.id)
+    await update.message.reply_text(
+        f"💻 خرید پدافند سایبری {item['label']}\n"
+        f"💰 قیمت هر واحد: {item['price']} سکه\n"
+        f"📦 حداکثر خرید با موجودی شما: {record['coins'] // item['price']}\n\n"
+        "تعداد مورد نظر خود را وارد کنید:",
+        reply_markup=ReplyKeyboardMarkup(
+            [["بازگشت به منوی فروشگاه ↩️"]], resize_keyboard=True
+        ),
+    )
+
+
 async def handle_defense_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None or update.effective_user is None:
         return
@@ -6355,6 +6807,73 @@ async def handle_defense_quantity(update: Update, context: ContextTypes.DEFAULT_
     record[key] = record.get(key, 0) + (quantity * 10)
     save_user_data_store()
     context.user_data["awaiting_defense_quantity"] = False
+    await update.message.reply_text(
+        f"✅ تعداد {quantity * 10} {label} با موفقیت خریداری شد!\n"
+        f"💰 هزینه کل: {total_cost} سکه",
+        reply_markup=store_menu_markup(),
+    )
+
+
+async def handle_cyber_attack_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if not context.user_data.get("awaiting_cyber_attack_quantity"):
+        return
+    message_text = (update.message.text or "").strip()
+    if message_text == "بازگشت به منوی فروشگاه ↩️":
+        context.user_data["awaiting_cyber_attack_quantity"] = False
+        await back_to_shop(update, context)
+        return
+    quantity = parse_positive_int(message_text)
+    if quantity is None:
+        await update.message.reply_text("❌ فقط عدد وارد کنید.")
+        return
+    record = get_user_record(update.effective_user.id)
+    total_cost = CYBER_ATTACK_COST * quantity
+    if record["coins"] < total_cost:
+        await update.message.reply_text("❌ سکه کافی ندارید.")
+        return
+    record["coins"] -= total_cost
+    record["cyber_attacks"] = record.get("cyber_attacks", 0) + quantity
+    save_user_data_store()
+    context.user_data["awaiting_cyber_attack_quantity"] = False
+    await update.message.reply_text(
+        f"✅ تعداد {quantity} حمله سایبری با موفقیت خریداری شد!\n"
+        f"💰 هزینه کل: {total_cost} سکه",
+        reply_markup=store_menu_markup(),
+    )
+
+
+async def handle_cyber_defense_quantity(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if not context.user_data.get("awaiting_cyber_defense_quantity"):
+        return
+    message_text = (update.message.text or "").strip()
+    if message_text == "بازگشت به منوی فروشگاه ↩️":
+        context.user_data["awaiting_cyber_defense_quantity"] = False
+        await back_to_shop(update, context)
+        return
+    quantity = parse_positive_int(message_text)
+    if quantity is None:
+        await update.message.reply_text("❌ فقط عدد وارد کنید.")
+        return
+    record = get_user_record(update.effective_user.id)
+    price = context.user_data.get("cyber_defense_price", 0)
+    key = context.user_data.get("cyber_defense_key")
+    label = context.user_data.get("cyber_defense_label", "پدافند سایبری")
+    total_cost = price * quantity
+    if not key or price <= 0:
+        context.user_data["awaiting_cyber_defense_quantity"] = False
+        await update.message.reply_text("❌ پدافند سایبری معتبر نیست.")
+        return
+    if record["coins"] < total_cost:
+        await update.message.reply_text("❌ سکه کافی ندارید.")
+        return
+    record["coins"] -= total_cost
+    record[key] = record.get(key, 0) + (quantity * 10)
+    save_user_data_store()
+    context.user_data["awaiting_cyber_defense_quantity"] = False
     await update.message.reply_text(
         f"✅ تعداد {quantity * 10} {label} با موفقیت خریداری شد!\n"
         f"💰 هزینه کل: {total_cost} سکه",
@@ -6909,11 +7428,19 @@ def format_user_assets(record: dict) -> str:
             count = record.get(key, 0)
             if count:
                 missiles.append(f"{label}: {count}")
+    cyber_attacks = record.get("cyber_attacks", 0)
+    if cyber_attacks:
+        missiles.append(f"حمله سایبری: {cyber_attacks}")
     defenses = []
     for item in DEFENSE_ITEMS:
         count = record.get(item["key"], 0)
         if count:
             defenses.append(f"{item['label']}: {count}")
+    cyber_defenses = []
+    for item in CYBER_DEFENSE_ITEMS:
+        count = record.get(item["key"], 0)
+        if count:
+            cyber_defenses.append(f"{item['label']}: {count}")
     return (
         f"🆔 آیدی: {record.get('id')}\n"
         f"👤 نام: {record.get('display_name', 'کاربر')}\n"
@@ -6925,6 +7452,7 @@ def format_user_assets(record: dict) -> str:
         f"🛡️ سپر فعال: {record.get('shield_active', False)}\n"
         f"🧨 موشک‌ها: {', '.join(missiles) if missiles else 'ندارد'}\n"
         f"🛡️ پدافندها: {', '.join(defenses) if defenses else 'ندارد'}\n"
+        f"🛡️ پدافندهای سایبری: {', '.join(cyber_defenses) if cyber_defenses else 'ندارد'}\n"
         f"کلن: {record.get('clan_id') or 'ندارد'}"
     )
 
@@ -7182,11 +7710,13 @@ async def reset_all_assets(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     missile_keys = set(MISSILE_NAME_TO_KEY.values())
     defense_keys = {item["key"] for item in DEFENSE_ITEMS}
+    cyber_defense_keys = {item["key"] for item in CYBER_DEFENSE_ITEMS}
     for record in user_data_store.values():
         record["coins"] = 0
         record["gems"] = 0
         record["toman"] = 0
         record["missiles"] = 0
+        record["cyber_attacks"] = 0
         record["level"] = 1
         record["experience"] = 0
         record["experience_needed"] = 100
@@ -7218,10 +7748,14 @@ async def reset_all_assets(update: Update, context: ContextTypes.DEFAULT_TYPE):
         record["daily_duels_started"] = 0
         record["last_duel_day"] = None
         record["active_defense"] = None
+        record["active_cyber_defense"] = None
+        record["cyber_block_until"] = None
         record["selected_title"] = None
         for key in missile_keys:
             record[key] = 0
         for key in defense_keys:
+            record[key] = 0
+        for key in cyber_defense_keys:
             record[key] = 0
     save_user_data_store()
     await admin_only_reply(update, "✅ تمام دارایی کاربران صفر شد.")
@@ -7696,6 +8230,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^سکه\\s*\\d+\\s*🛒$"), coin_pack_purchase))
     app.add_handler(MessageHandler(filters.Regex("^موشک 🚀$"), missiles_menu))
     app.add_handler(MessageHandler(filters.Regex("^پدافند 🛡️$"), defense_shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^سایبری 💻$"), cyber_shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^پدافند های سایبری 🛡️$"), cyber_defense_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^سپر 🛡️$"), shield_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^💎\\s*\\d+\\s*-"), shield_purchase))
     app.add_handler(MessageHandler(filters.Regex("^کروز 🚀$"), cruise_missiles_menu))
@@ -7712,6 +8248,8 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^شهاب 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^طوفان 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^الماس 💰"), generic_missile_purchase_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^حمله سایبری 💻"), cyber_attack_purchase_prompt))
+    app.add_handler(MessageHandler(filters.Regex("🛡️\\s*-\\s*\\d+$"), cyber_defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("🛡️\\s*-\\s*\\d+$"), defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^شیمیایی 💰"), chemical_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^هسته‌ای 💰"), nuclear_purchase_prompt))
@@ -7759,6 +8297,10 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^فعال کردن تیر بار 🛡️$"), defense_activate_tirbar))
     app.add_handler(MessageHandler(filters.Regex("^فعال کردن .+ 🛡️$"), defense_activate_generic))
     app.add_handler(MessageHandler(filters.Regex("^غیرفعال کردن پدافند ❌$"), defense_deactivate))
+    app.add_handler(MessageHandler(filters.Regex("^مدیریت پدافند سایبری 🛡️$"), cyber_defense_status_menu))
+    app.add_handler(MessageHandler(filters.Regex("^فعال کردن پدافند سایبری .+ 💻$"), cyber_defense_activate))
+    app.add_handler(MessageHandler(filters.Regex("^غیرفعال کردن پدافند سایبری ❌$"), cyber_defense_deactivate))
+    app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی پدافند ↩️$"), defense_status_menu))
     app.add_handler(MessageHandler(filters.Regex("^(دوئل|فایت)$"), start_duel))
     app.add_handler(
         MessageHandler(filters.Regex("^حمله\\s+.+$") & ~filters.COMMAND, group_attack_by_reply)
