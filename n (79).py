@@ -235,16 +235,16 @@ CRYSTAL_LEAGUE_NAME = "🔮 کریستال"
 STARPASS_COST = 50
 STARPASS_RESET_TIME = time(3, 30)
 STARPASS_REWARDS = [
-    {"day": 1, "label": "15 عماد", "missiles": {"emad_missiles": 15}},
-    {"day": 2, "label": "400 اس", "coins": 400},
+    {"day": 1, "label": "10 اطلس", "missiles": {"atlas_missiles": 10}},
+    {"day": 2, "label": "5 ارو", "defenses": {"arrow_defense": 5}},
     {"day": 3, "label": "2000 سکه", "coins": 2000},
     {"day": 4, "label": "100 تجربه", "experience": 100},
-    {"day": 5, "label": "10 خرمشهر", "missiles": {"khorramshahr_missiles": 10}},
-    {"day": 6, "label": "5 ردلاین", "missiles": {"redline_missiles": 5}},
-    {"day": 7, "label": "10 اچ‌کیو-9", "defenses": {"hq9_defense": 10}},
-    {"day": 8, "label": "5 هسته‌ای", "missiles": {"nuclear_missiles": 5}},
+    {"day": 5, "label": "10 الماس", "gems": 10},
+    {"day": 6, "label": "5 هسته‌ای", "missiles": {"nuclear_missiles": 5}},
+    {"day": 7, "label": "3 اچ‌کیو-9", "defenses": {"hq9_defense": 3}},
+    {"day": 8, "label": "25 الماس", "gems": 25},
     {"day": 9, "label": "10000 سکه", "coins": 10000},
-    {"day": 10, "label": "تایتل SolarVIP", "title": "SolarVIP"},
+    {"day": 10, "label": "50 جم", "gems": 50},
 ]
 STARPASS_CHAT_STICKERS = [
     ("🔥 استیکر آتش", "🔥"),
@@ -1616,9 +1616,8 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
         ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
         ["معدن جم 💎", "تبادل سکه 💸", "کلن 👥"],
-        ["راهنما ❓", "پدافند ها 🛡️"],
-        ["پشتیبانی 📞", "سولارپس ⭐", "خرید آیتم 💳"],
-        ["شخصی سازی 🎨"],
+        ["راهنما ❓", "پشتیبانی 📞", "خرید آیتم 💳"],
+        ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
     ]
     if user_id is not None and is_admin(user_id):
         keyboard.append(["پنل ادمین 🛠️"])
