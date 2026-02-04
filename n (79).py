@@ -1004,7 +1004,7 @@ def format_owned_missiles(record: dict) -> str:
     cyber_count = record.get("cyber_attacks", 0)
     if cyber_count > 0:
         lines.append("سایبری 💻")
-        lines.append(f"• حمله سایبری: {cyber_count}")
+        lines.append(f"• سایبری: {cyber_count}")
     if len(lines) == 1:
         return "موشکی ندارید."
     return "\n".join(lines)
@@ -1923,7 +1923,7 @@ def format_cyber_attack_report(
     )
     defense_line = defense_note or "⚠️ پدافند سایبری فعال نبود."
     return (
-        "💻💥 حمله سایبری! 💥💻\n\n"
+        "💻💥 سایبری! 💥💻\n\n"
         f"👤 مهاجم: {attacker_name}\n"
         f"🛡️ مدافع: {defender_name}\n\n"
         "نوع حمله: سایبری 💻\n"
@@ -3567,7 +3567,7 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     choices = owned_missile_choices(record)
     if not choices and record.get("cyber_attacks", 0) <= 0:
-        await query.message.reply_text("❌ موشک یا حمله سایبری برای حمله ندارید.")
+        await query.message.reply_text("❌ موشک یا سایبری برای حمله ندارید.")
         return
     context.user_data["awaiting_support_message"] = False
     context.user_data["awaiting_coin_transfer_target"] = False
@@ -3629,7 +3629,7 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         return
     if is_cyber_attack_name(missile_name):
         if record.get("cyber_attacks", 0) <= 0:
-            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            await update.message.reply_text("❌ سایبری ندارید.")
             return
         record["cyber_attacks"] -= 1
         context.user_data["awaiting_global_attack_missile"] = False
@@ -3975,7 +3975,7 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
             return
     if is_cyber_attack_name(missile_name):
         if attacker_record.get("cyber_attacks", 0) <= 0:
-            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            await update.message.reply_text("❌ سایبری ندارید.")
             return
     else:
         missile_key = find_missile_key(missile_name)
@@ -4916,13 +4916,13 @@ async def cyber_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_purchase_flags(context)
     record = get_user_record(update.effective_user.id)
     rows = [
-        [f"حمله سایبری 💻 - {CYBER_ATTACK_COST}"],
+        [f"سایبری 💻 - {CYBER_ATTACK_COST}"],
         ["بازگشت به منوی فروشگاه ↩️"],
     ]
     await update.message.reply_text(
         "💻 فروشگاه سایبری\n"
         f"💰 سکه‌های شما: {record['coins']}\n"
-        f"📦 حمله‌های سایبری شما: {record.get('cyber_attacks', 0)}\n\n"
+        f"📦 موجودی سایبری شما: {record.get('cyber_attacks', 0)}\n\n"
         "🔻 گزینه مورد نظر را انتخاب کنید:",
         reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True),
     )
@@ -5284,7 +5284,7 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
     remove_single_revenge_target(record, target_id)
     if is_cyber_attack_name(missile_name):
         if record.get("cyber_attacks", 0) <= 0:
-            await update.message.reply_text("❌ حمله سایبری ندارید.")
+            await update.message.reply_text("❌ سایبری ندارید.")
             return
     else:
         missile_key = find_missile_key(missile_name)
@@ -6146,7 +6146,7 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
         return
     if is_cyber_attack_name(missile_name):
         context.user_data["awaiting_clan_war_attack"] = False
-        await update.message.reply_text("❌ حمله سایبری در کلن وار قابل استفاده نیست.")
+        await update.message.reply_text("❌ سایبری در کلن وار قابل استفاده نیست.")
         return
     missile_key = find_missile_key(missile_name)
     if missile_key is None:
@@ -6750,7 +6750,7 @@ async def cyber_attack_purchase_prompt(update: Update, context: ContextTypes.DEF
     record = get_user_record(update.effective_user.id)
     context.user_data["awaiting_cyber_attack_quantity"] = True
     await update.message.reply_text(
-        "💻 خرید حمله سایبری\n"
+        "💻 خرید سایبری\n"
         f"💰 قیمت هر واحد: {CYBER_ATTACK_COST} سکه\n"
         f"📦 حداکثر خرید با موجودی شما: {record['coins'] // CYBER_ATTACK_COST}\n\n"
         "تعداد مورد نظر خود را وارد کنید:",
@@ -6846,7 +6846,7 @@ async def handle_cyber_attack_quantity(update: Update, context: ContextTypes.DEF
     save_user_data_store()
     context.user_data["awaiting_cyber_attack_quantity"] = False
     await update.message.reply_text(
-        f"✅ تعداد {quantity} حمله سایبری با موفقیت خریداری شد!\n"
+        f"✅ تعداد {quantity} سایبری با موفقیت خریداری شد!\n"
         f"💰 هزینه کل: {total_cost} سکه",
         reply_markup=store_menu_markup(),
     )
@@ -7438,7 +7438,7 @@ def format_user_assets(record: dict) -> str:
                 missiles.append(f"{label}: {count}")
     cyber_attacks = record.get("cyber_attacks", 0)
     if cyber_attacks:
-        missiles.append(f"حمله سایبری: {cyber_attacks}")
+        missiles.append(f"سایبری: {cyber_attacks}")
     defenses = []
     for item in DEFENSE_ITEMS:
         count = record.get(item["key"], 0)
@@ -8256,7 +8256,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^شهاب 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^طوفان 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^الماس 💰"), generic_missile_purchase_prompt))
-    app.add_handler(MessageHandler(filters.Regex("^حمله سایبری 💻"), cyber_attack_purchase_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^سایبری 💻"), cyber_attack_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("💻\\s*-\\s*\\d+$"), cyber_defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("🛡️\\s*-\\s*\\d+$"), defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^شیمیایی 💰"), chemical_purchase_prompt))
