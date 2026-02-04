@@ -1002,7 +1002,7 @@ def format_owned_missiles(record: dict) -> str:
             lines.extend(owned_items)
     cyber_count = record.get("cyber_attacks", 0)
     if cyber_count > 0:
-        lines.append("سایبری 🧠")
+        lines.append("سایبری 💻")
         lines.append(f"• حمله سایبری: {cyber_count}")
     if len(lines) == 1:
         return "موشکی ندارید."
@@ -1023,10 +1023,10 @@ def format_owned_defenses(record: dict) -> str:
     for item in CYBER_DEFENSE_ITEMS:
         count = record.get(item["key"], 0)
         if count > 0:
-            cyber_lines.append(f"• {item['label']} 🧠: {count}")
+            cyber_lines.append(f"• {item['label']} 💻: {count}")
     cyber_active = record.get("active_cyber_defense")
     cyber_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == cyber_active), None)
-    cyber_label = f"{cyber_item['label']} 🧠" if cyber_item else "هیچ"
+    cyber_label = f"{cyber_item['label']} 💻" if cyber_item else "هیچ"
     cyber_lines.append(f"• پدافند سایبری فعال: {cyber_label}")
     has_regular = len(lines) > 2 or not lines[1].endswith("هیچ")
     has_cyber = len(cyber_lines) > 2 or not cyber_lines[1].endswith("هیچ")
@@ -1792,7 +1792,7 @@ def coin_pack_choice_markup() -> ReplyKeyboardMarkup:
 def store_menu_markup() -> ReplyKeyboardMarkup:
     keyboard = [
         ["موشک 🚀", "پدافند 🛡️"],
-        ["سایبری 🧠", "پدافند های سایبری 🛡️"],
+        ["سایبری 💻", "پدافند های سایبری 🛡️"],
         ["سپر 🛡️"],
         ["بازگشت به منوی اصلی ↩️"],
     ]
@@ -1896,6 +1896,36 @@ def format_defense_report(
         f"💰 سکه از دست رفته: {defender_coin_loss}\n"
         f"🏆 رنک: ⬆️ +{attacker_rank_delta} برای مهاجم | ➖ -{defender_rank_delta} برای مدافع\n"
         f"⏰ {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
+    )
+
+
+def format_cyber_attack_report(
+    attacker: dict,
+    defender: dict,
+    success: bool,
+    chance: int,
+    defense_note: str,
+    timestamp: datetime,
+) -> str:
+    attacker_name = display_name_with_sticker(attacker, "کاربر")
+    defender_name = display_name_with_sticker(defender, "کاربر")
+    result_line = "✅ هک موفق بود." if success else "❌ هک ناموفق بود."
+    duration_line = (
+        f"⏳ مدت اختلال: {CYBER_ATTACK_BLOCK_MINUTES} دقیقه" if success else "⏳ مدت اختلال: بدون اثر"
+    )
+    defense_line = defense_note or "⚠️ پدافند سایبری فعال نبود."
+    return (
+        "💻💥 حمله سایبری! 💥💻\n\n"
+        f"👤 مهاجم: {attacker_name}\n"
+        f"🛡️ مدافع: {defender_name}\n\n"
+        "نوع حمله: سایبری 💻\n"
+        f"نتیجه: {result_line}\n"
+        f"🎲 شانس موفقیت: {chance}%\n"
+        f"{duration_line}\n\n"
+        f"{defense_line}\n\n"
+        "💰 سکه‌ها: بدون تغییر\n"
+        "🏆 رنک: بدون تغییر\n\n"
+        f"⏰ تاریخ و ساعت: {timestamp.strftime('%Y-%m-%d %H:%M:%S')}"
     )
 
 
@@ -3601,33 +3631,22 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
             add_revenge_target(opponent_record, update.effective_user.id)
         apply_crystal_attack_limits(record, opponent_record)
         save_user_data_store()
-        result_line = "✅ هک موفق بود." if success else "❌ هک ناموفق بود."
-        defense_line = f"\n{defense_note}" if defense_note else ""
-        duration_line = (
-            f"\n⏳ مدت اختلال: {CYBER_ATTACK_BLOCK_MINUTES} دقیقه"
-            if success
-            else ""
-        )
-        defender_message = (
-            "🧠 حمله سایبری\n"
-            f"👤 مهاجم: {display_name_with_sticker(record, 'کاربر')}\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
-        )
-        attacker_message = (
-            "🧠 حمله سایبری\n"
-            f"🎯 هدف: {display_name_with_sticker(opponent_record, 'کاربر')}\n"
-            f"🎲 شانس موفقیت: {chance}%\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=record,
+            defender=opponent_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
         )
         await context.bot.send_message(
             chat_id=opponent_id,
-            text=defender_message,
+            text=report,
             reply_markup=revenge_inline_markup(update.effective_user.id) if success else None,
         )
         await update.message.reply_text(
-            attacker_message,
+            report,
             reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
         )
         return
@@ -3989,28 +4008,17 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         defender_record["last_attack_from"] = update.effective_user.id
         add_revenge_target(defender_record, update.effective_user.id)
         save_user_data_store()
-        result_line = "✅ هک موفق بود." if success else "❌ هک ناموفق بود."
-        duration_line = (
-            f"\n⏳ مدت اختلال: {CYBER_ATTACK_BLOCK_MINUTES} دقیقه"
-            if success
-            else ""
-        )
-        defense_line = f"\n{defense_note}" if defense_note else ""
-        report = (
-            "🧠 حمله سایبری\n"
-            f"👤 مهاجم: {display_name_with_sticker(attacker_record, 'کاربر')}\n"
-            f"🎯 هدف: {display_name_with_sticker(defender_record, 'کاربر')}\n"
-            f"🎲 شانس موفقیت: {chance}%\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=attacker_record,
+            defender=defender_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
         )
         await update.message.reply_text(report)
-        defender_report = (
-            "🧠 حمله سایبری\n"
-            f"👤 مهاجم: {display_name_with_sticker(attacker_record, 'کاربر')}\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
-        )
+        defender_report = report
         await notify_user(
             context,
             target_user.id,
@@ -4900,11 +4908,11 @@ async def cyber_shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     reset_purchase_flags(context)
     record = get_user_record(update.effective_user.id)
     rows = [
-        [f"حمله سایبری 🧠 - {CYBER_ATTACK_COST}"],
+        [f"حمله سایبری 💻 - {CYBER_ATTACK_COST}"],
         ["بازگشت به منوی فروشگاه ↩️"],
     ]
     await update.message.reply_text(
-        "🧠 فروشگاه سایبری\n"
+        "💻 فروشگاه سایبری\n"
         f"💰 سکه‌های شما: {record['coins']}\n"
         f"📦 حمله‌های سایبری شما: {record.get('cyber_attacks', 0)}\n\n"
         "🔻 گزینه مورد نظر را انتخاب کنید:",
@@ -4924,7 +4932,7 @@ async def cyber_defense_shop_menu(update: Update, context: ContextTypes.DEFAULT_
     rows = [[f"{item['label']} 🛡️ - {item['price']}"] for item in CYBER_DEFENSE_ITEMS]
     rows.append(["بازگشت به منوی فروشگاه ↩️"])
     await update.message.reply_text(
-        "🧠 فروشگاه پدافندهای سایبری\n"
+        "💻 فروشگاه پدافندهای سایبری\n"
         f"💰 سکه‌های شما: {record['coins']}\n\n"
         "🔻 پدافند سایبری مورد نظر را انتخاب کنید:",
         reply_markup=ReplyKeyboardMarkup(rows, resize_keyboard=True),
@@ -4948,7 +4956,7 @@ async def defense_status_menu(update: Update, context: ContextTypes.DEFAULT_TYPE
     active_label = f"{active_item['label']} 🛡️" if active_item else "هیچ"
     cyber_active = record.get("active_cyber_defense")
     cyber_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == cyber_active), None)
-    cyber_label = f"{cyber_item['label']} 🧠" if cyber_item else "هیچ"
+    cyber_label = f"{cyber_item['label']} 💻" if cyber_item else "هیچ"
     counts = "\n".join(
         f"• {item['label']} 🛡️: {record.get(item['key'], 0)}"
         for item in DEFENSE_ITEMS
@@ -4969,7 +4977,7 @@ def cyber_defense_status_menu_markup(record: dict) -> ReplyKeyboardMarkup:
     keyboard = []
     for item in CYBER_DEFENSE_ITEMS:
         if record.get(item["key"], 0) > 0:
-            keyboard.append([f"فعال کردن پدافند سایبری {item['label']} 🧠"])
+            keyboard.append([f"فعال کردن پدافند سایبری {item['label']} 💻"])
     keyboard.append(["غیرفعال کردن پدافند سایبری ❌"])
     keyboard.append(["بازگشت به منوی پدافند ↩️"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -4986,15 +4994,15 @@ async def cyber_defense_status_menu(update: Update, context: ContextTypes.DEFAUL
     record = get_user_record(update.effective_user.id)
     active = record.get("active_cyber_defense")
     active_item = next((item for item in CYBER_DEFENSE_ITEMS if item["key"] == active), None)
-    active_label = f"{active_item['label']} 🧠" if active_item else "هیچ"
+    active_label = f"{active_item['label']} 💻" if active_item else "هیچ"
     counts = "\n".join(
-        f"• {item['label']} 🧠: {record.get(item['key'], 0)}"
+        f"• {item['label']} 💻: {record.get(item['key'], 0)}"
         for item in CYBER_DEFENSE_ITEMS
         if record.get(item["key"], 0) > 0
     )
     counts_text = counts if counts else "• هیچ پدافند سایبری ندارید."
     await update.message.reply_text(
-        "🧠 پدافندهای سایبری شما:\n"
+        "💻 پدافندهای سایبری شما:\n"
         f"{counts_text}\n"
         f"• پدافند سایبری فعال: {active_label}\n\n"
         "از منو انتخاب کنید:",
@@ -5010,7 +5018,7 @@ async def cyber_defense_activate(update: Update, context: ContextTypes.DEFAULT_T
     if await reject_if_not_private(update):
         return
     text = (update.message.text or "").strip()
-    label = text.replace("فعال کردن پدافند سایبری", "").replace("🧠", "").strip()
+    label = text.replace("فعال کردن پدافند سایبری", "").replace("💻", "").strip()
     item = next((entry for entry in CYBER_DEFENSE_ITEMS if entry["label"] == label), None)
     if not item:
         return
@@ -5296,28 +5304,17 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
             add_revenge_target(target_record, update.effective_user.id)
         apply_crystal_attack_limits(record, target_record)
         save_user_data_store()
-        result_line = "✅ هک موفق بود." if success else "❌ هک ناموفق بود."
-        duration_line = (
-            f"\n⏳ مدت اختلال: {CYBER_ATTACK_BLOCK_MINUTES} دقیقه"
-            if success
-            else ""
-        )
-        defense_line = f"\n{defense_note}" if defense_note else ""
-        report = (
-            "🧠 حمله سایبری\n"
-            f"👤 مهاجم: {display_name_with_sticker(record, 'کاربر')}\n"
-            f"🎯 هدف: {display_name_with_sticker(target_record, 'کاربر')}\n"
-            f"🎲 شانس موفقیت: {chance}%\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
+        timestamp = datetime.now()
+        report = format_cyber_attack_report(
+            attacker=record,
+            defender=target_record,
+            success=success,
+            chance=chance,
+            defense_note=defense_note,
+            timestamp=timestamp,
         )
         await update.message.reply_text(report)
-        defense_report = (
-            "🧠 حمله سایبری\n"
-            f"👤 مهاجم: {display_name_with_sticker(record, 'کاربر')}\n"
-            f"{result_line}{duration_line}"
-            f"{defense_line}"
-        )
+        defense_report = report
         await notify_user(
             context,
             int(target_id),
@@ -6745,7 +6742,7 @@ async def cyber_attack_purchase_prompt(update: Update, context: ContextTypes.DEF
     record = get_user_record(update.effective_user.id)
     context.user_data["awaiting_cyber_attack_quantity"] = True
     await update.message.reply_text(
-        "🧠 خرید حمله سایبری\n"
+        "💻 خرید حمله سایبری\n"
         f"💰 قیمت هر واحد: {CYBER_ATTACK_COST} سکه\n"
         f"📦 حداکثر خرید با موجودی شما: {record['coins'] // CYBER_ATTACK_COST}\n\n"
         "تعداد مورد نظر خود را وارد کنید:",
@@ -6774,7 +6771,7 @@ async def cyber_defense_purchase_prompt(update: Update, context: ContextTypes.DE
     context.user_data["awaiting_cyber_defense_quantity"] = True
     record = get_user_record(update.effective_user.id)
     await update.message.reply_text(
-        f"🧠 خرید پدافند سایبری {item['label']}\n"
+        f"💻 خرید پدافند سایبری {item['label']}\n"
         f"💰 قیمت هر واحد: {item['price']} سکه\n"
         f"📦 حداکثر خرید با موجودی شما: {record['coins'] // item['price']}\n\n"
         "تعداد مورد نظر خود را وارد کنید:",
@@ -8233,7 +8230,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^سکه\\s*\\d+\\s*🛒$"), coin_pack_purchase))
     app.add_handler(MessageHandler(filters.Regex("^موشک 🚀$"), missiles_menu))
     app.add_handler(MessageHandler(filters.Regex("^پدافند 🛡️$"), defense_shop_menu))
-    app.add_handler(MessageHandler(filters.Regex("^سایبری 🧠$"), cyber_shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^سایبری 💻$"), cyber_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^پدافند های سایبری 🛡️$"), cyber_defense_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^سپر 🛡️$"), shield_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^💎\\s*\\d+\\s*-"), shield_purchase))
@@ -8251,7 +8248,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^شهاب 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^طوفان 💰"), generic_missile_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^الماس 💰"), generic_missile_purchase_prompt))
-    app.add_handler(MessageHandler(filters.Regex("^حمله سایبری 🧠"), cyber_attack_purchase_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^حمله سایبری 💻"), cyber_attack_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("🛡️\\s*-\\s*\\d+$"), cyber_defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("🛡️\\s*-\\s*\\d+$"), defense_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^شیمیایی 💰"), chemical_purchase_prompt))
@@ -8301,7 +8298,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^فعال کردن .+ 🛡️$"), defense_activate_generic))
     app.add_handler(MessageHandler(filters.Regex("^غیرفعال کردن پدافند ❌$"), defense_deactivate))
     app.add_handler(MessageHandler(filters.Regex("^مدیریت پدافند سایبری 🛡️$"), cyber_defense_status_menu))
-    app.add_handler(MessageHandler(filters.Regex("^فعال کردن پدافند سایبری .+ 🧠$"), cyber_defense_activate))
+    app.add_handler(MessageHandler(filters.Regex("^فعال کردن پدافند سایبری .+ 💻$"), cyber_defense_activate))
     app.add_handler(MessageHandler(filters.Regex("^غیرفعال کردن پدافند سایبری ❌$"), cyber_defense_deactivate))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی پدافند ↩️$"), defense_status_menu))
     app.add_handler(MessageHandler(filters.Regex("^(دوئل|فایت)$"), start_duel))
