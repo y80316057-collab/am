@@ -109,9 +109,8 @@ CYBER_ATTACK_COST = 1000
 CYBER_ATTACK_SUCCESS_RATE = 30
 CYBER_ATTACK_BLOCK_MINUTES = 5
 CYBER_DEFENSE_ITEMS = [
-    {"key": "cyber_defense_1", "label": "سایبری-1", "price": 150, "reduction": 4},
-    {"key": "cyber_defense_2", "label": "سایبری-2", "price": 1000, "reduction": 12},
-    {"key": "cyber_defense_3", "label": "سایبری-3", "price": 2000, "reduction": 20},
+    {"key": "cyber_defense_2", "label": "پارادوکس", "price": 1000, "reduction": 12},
+    {"key": "cyber_defense_3", "label": "انتی ویروس", "price": 2000, "reduction": 20},
 ]
 CLAN_CREATE_COST = 3000
 CLAN_LEVEL_COSTS = {2: 10000, 3: 15000, 4: 25000, 5: 50000}
@@ -469,7 +468,6 @@ def get_user_record(user_id: int) -> dict:
             "s400_defense": 0,
             "hq22_defense": 0,
             "active_defense": None,
-            "cyber_defense_1": 0,
             "cyber_defense_2": 0,
             "cyber_defense_3": 0,
             "active_cyber_defense": None,
@@ -557,7 +555,6 @@ def get_user_record(user_id: int) -> dict:
         "s400_defense": 0,
         "hq22_defense": 0,
         "active_defense": None,
-        "cyber_defense_1": 0,
         "cyber_defense_2": 0,
         "cyber_defense_3": 0,
         "active_cyber_defense": None,
@@ -1766,7 +1763,7 @@ def starpass_purchase_markup() -> InlineKeyboardMarkup:
 
 
 def wheel_menu_markup() -> ReplyKeyboardMarkup:
-    keyboard = [["فالکون"], ["بازگشت به منوی اصلی ↩️"]]
+    keyboard = [["فالکون 🦅"], ["بازگشت به منوی اصلی ↩️"]]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
@@ -1804,7 +1801,7 @@ def store_menu_markup() -> ReplyKeyboardMarkup:
     keyboard = [
         ["موشک 🚀", "پدافند 🛡️"],
         ["سایبری 💻", "پدافند های سایبری 💻"],
-        ["سپر 🛡️"],
+        ["سپر 💎"],
         ["بازگشت به منوی اصلی ↩️"],
     ]
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
@@ -2107,7 +2104,7 @@ def help_menu_markup() -> InlineKeyboardMarkup:
             InlineKeyboardButton("پدافند 🛡️", callback_data="help_defense"),
         ],
         [
-            InlineKeyboardButton("سپر 🛡️", callback_data="help_shield"),
+            InlineKeyboardButton("سپر 💎", callback_data="help_shield"),
             InlineKeyboardButton("حمله جهانی 🌐", callback_data="help_global_attack"),
         ],
         [
@@ -2223,7 +2220,7 @@ def redline_wheel_markup() -> InlineKeyboardMarkup:
 def redline_wheel_text() -> str:
     rewards_lines = "\n".join(f"• {reward['label']}" for reward in REDLINE_WHEEL_REWARDS)
     return (
-        "🎡 گردونه: فالکون\n\n"
+        "🎡 گردونه: فالکون 🦅\n\n"
         "💰 هزینه: ۱۰۰۰ سکه یا 💎 ۵ جم\n\n"
         "🎁 آیتم‌های ممکن:\n"
         f"{rewards_lines}\n\n"
@@ -2253,7 +2250,7 @@ async def wheel_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if await reject_if_not_private(update):
         return
     text = (update.message.text or "").strip()
-    if text == "فالکون":
+    if text == "فالکون 🦅":
         context.user_data["redline_wheel_payment"] = None
         await update.message.reply_text(
             redline_wheel_text(),
@@ -8216,7 +8213,7 @@ def main():
         CallbackQueryHandler(starpass_purchase_confirm, pattern="^starpass_purchase_")
     )
     app.add_handler(MessageHandler(filters.Regex("^گردونه 🎡$"), wheel_menu))
-    app.add_handler(MessageHandler(filters.Regex("^فالکون$"), wheel_choice))
+    app.add_handler(MessageHandler(filters.Regex("^فالکون 🦅$"), wheel_choice))
     app.add_handler(MessageHandler(filters.Regex("^حمله جهانی 🌐$"), global_attack_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی اصلی ↩️$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت ↩️$"), back_to_main_menu))
@@ -8243,7 +8240,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^پدافند 🛡️$"), defense_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^سایبری 💻$"), cyber_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^پدافند های سایبری 💻$"), cyber_defense_shop_menu))
-    app.add_handler(MessageHandler(filters.Regex("^سپر 🛡️$"), shield_shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^سپر 💎$"), shield_shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^💎\\s*\\d+\\s*-"), shield_purchase))
     app.add_handler(MessageHandler(filters.Regex("^کروز 🚀$"), cruise_missiles_menu))
     app.add_handler(MessageHandler(filters.Regex("^بالستیک 🚀$"), ballistic_missiles_menu))
