@@ -592,9 +592,9 @@ def get_user_record(user_id: int) -> dict:
         "first_start_completed": False,
     }
     needs_save = is_new_record
-    for key, value in defaults.items():
-        if key not in record:
-            record[key] = value
+    for field_key, value in defaults.items():
+        if field_key not in record:
+            record[field_key] = value
             needs_save = True
     if "level_pass_level" not in record:
         record["level_pass_level"] = 1
@@ -611,7 +611,7 @@ def get_user_record(user_id: int) -> dict:
     if "admin_protection" not in record and is_admin(user_id):
         record["admin_protection"] = True
         needs_save = True
-    user_data_store[key] = record
+    user_data_store[str(user_id)] = record
     if needs_save:
         save_user_data_store()
     return record
