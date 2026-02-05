@@ -782,8 +782,8 @@ async def is_user_subscribed(
     try:
         member = await context.bot.get_chat_member(chat_id=chat_id_or_username, user_id=user_id)
     except Exception:
-        # اگر بات دسترسی به چت ندارد (مثلاً ادمین نیست یا چت خصوصی است) بررسی را رد می‌کنیم
-        return True
+        # اگر بررسی عضویت با خطا مواجه شد، عضویت را تأییدشده در نظر نگیریم.
+        return False
     return member.status not in {"left", "kicked"}
 
 
@@ -792,6 +792,8 @@ async def ensure_required_memberships(
     context: ContextTypes.DEFAULT_TYPE,
     via_callback: bool = False,
 ) -> bool:
+    if not is_private_chat(update):
+        return False
     user = update.effective_user
     if user is None:
         return False
@@ -852,8 +854,7 @@ async def check_subscriptions_callback(update: Update, context: ContextTypes.DEF
     await update.callback_query.answer("✅ عضویت تأیید شد.")
     try:
         await update.callback_query.edit_message_text(
-            "✅ عضویت شما تأیید شد. می‌توانید از منوها استفاده کنید.",
-            reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
+            "✅ عضویت شما تأیید شد.\nبه ربات خوش آمدید! دوباره /start بزنید.",
         )
     except Exception:
         pass
@@ -1091,10 +1092,10 @@ def missile_reward_range(name: str, missile_key: str | None = None) -> tuple[int
 
 def calculate_attack_reward(defender: dict, reward_range: tuple[int, int]) -> int:
     base_reward = random.randint(*reward_range)
-    defender_coins = defender.get("coins", 0)
+    defender_coins = max(0, int(defender.get("coins", 0) or 0))
     if defender_coins >= base_reward:
         return base_reward
-    return int(defender_coins * 0.75)
+    return max(0, int(defender_coins * 0.75))
 
 
 def calculate_rank_transfer(attacker: dict, defender: dict, damage: int) -> tuple[int, int]:
@@ -4813,6 +4814,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/admin_protection_on\n"
         "/admin_protection_off\n"
         "/list_assets\n"
+        "/missile_owners <missile_name>\n"
         "/reset_caps\n"
         "/create_gift <uses> <amount>\n"
         "/redeem <code>\n"
@@ -6369,7 +6371,7 @@ async def cruise_missiles_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     record = get_user_record(update.effective_user.id) if update.effective_user else None
     atlas_level = max(1, record.get("atlas_level", 1)) if record else 1
     atlas_price = atlas_unit_price(atlas_level)
-    items = [f"قدر 💰 {QADR_PRICE}", f"اطلس ?? {atlas_price}"]
+    items = [f"قدر 💰 {QADR_PRICE}", f"اطلس 💰 {atlas_price}"]
     if record and record.get("level", 1) >= 6:
         items.append(f"خیبرشکن 💰 {KHEIBAR_PRICE}")
     rows = [[item] for item in items]
@@ -7091,24 +7093,30 @@ async def starpass_rewards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not record.get("starpass_started_at"):
         record["starpass_started_at"] = now.isoformat()
     today_key = starpass_day_key(now)
-    day_index = record.get("starpass_day", 1)
-    allowed_day = starpass_allowed_day(record, now)
-    if day_index > allowed_day:
+    if record.get("starpass_last_claim") == today_key:
         await update.message.reply_text(
-            "⏳ هنوز روز بعدی سولارپس باز نشده است.",
+            "⏳ جایزه امروز سولارپس را قبلاً دریافت کرده‌اید.",
             reply_markup=starpass_menu_markup(),
         )
         return
+    day_index = max(1, int(record.get("starpass_day", 1) or 1))
+    allowed_day = starpass_allowed_day(record, now)
     if day_index > len(STARPASS_REWARDS):
         await update.message.reply_text(
             "✅ تمام جوایز این فصل را دریافت کردید.",
             reply_markup=starpass_menu_markup(),
         )
         return
+    if day_index > allowed_day:
+        await update.message.reply_text(
+            "⏳ هنوز روز بعدی سولارپس باز نشده است.",
+            reply_markup=starpass_menu_markup(),
+        )
+        return
     reward = STARPASS_REWARDS[day_index - 1]
     apply_starpass_reward(record, reward)
     record["starpass_last_claim"] = today_key
-    record["starpass_day"] = min(day_index + 1, len(STARPASS_REWARDS))
+    record["starpass_day"] = day_index + 1
     save_user_data_store()
     await update.message.reply_text(
         f"✅ جایزه روز {reward['day']} دریافت شد: {reward['label']}",
@@ -7481,6 +7489,50 @@ async def user_assets_by_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     record = get_user_record(user_id)
     await admin_only_reply(update, format_user_assets(record))
+
+
+async def missile_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if not is_admin(update.effective_user.id):
+        await admin_only_reply(update, "⛔️ فقط ادمین اجازه این کار رو داره.")
+        return
+    if not context.args:
+        await admin_only_reply(update, "فرمت: /missile_owners <missile_name>")
+        return
+
+    missile_name = " ".join(context.args).strip()
+    missile_key = find_missile_key(missile_name)
+    if missile_key is None:
+        await admin_only_reply(update, "❌ نام موشک معتبر نیست.")
+        return
+
+    canonical_name = next(
+        (label for label, key in MISSILE_NAME_TO_KEY.items() if key == missile_key),
+        missile_name,
+    )
+
+    holders: list[tuple[int, str, int]] = []
+    for record in user_data_store.values():
+        count = int(record.get(missile_key, 0) or 0)
+        if count <= 0:
+            continue
+        user_id = int(record.get("id", 0) or 0)
+        display_name = record.get("display_name", "کاربر")
+        holders.append((user_id, display_name, count))
+
+    if not holders:
+        await admin_only_reply(update, f"هیچ کاربری موشک «{canonical_name}» ندارد.")
+        return
+
+    holders.sort(key=lambda item: item[2], reverse=True)
+    lines = [f"📊 لیست دارندگان موشک «{canonical_name}» (بیشترین به کمترین):"]
+    for index, (user_id, display_name, count) in enumerate(holders, start=1):
+        lines.append(f"{index}. 👤 {display_name} | 🆔 {user_id} | 🧨 {count}")
+
+    chunk_size = 40
+    for i in range(0, len(lines), chunk_size):
+        await admin_only_reply(update, "\n".join(lines[i : i + chunk_size]))
 
 
 async def reset_caps(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -8177,6 +8229,7 @@ def main():
     app.add_handler(CommandHandler("adjust_balance", adjust_balance))
     app.add_handler(CommandHandler("list_assets", list_all_assets))
     app.add_handler(CommandHandler("user_assets", user_assets_by_id))
+    app.add_handler(CommandHandler("missile_owners", missile_owners))
     app.add_handler(CommandHandler("reset_caps", reset_caps))
     app.add_handler(CommandHandler("ban", ban_user))
     app.add_handler(CommandHandler("bang", permanent_ban))
