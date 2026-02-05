@@ -2783,8 +2783,6 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if update.message.text and update.message.text.startswith("/"):
         reset_clan_prompt_flags(context)
-    if await ensure_required_memberships(update, context):
-        return
     if context.user_data.get("awaiting_support_message"):
         await handle_support_message(update, context)
         return
