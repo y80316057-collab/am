@@ -3065,6 +3065,14 @@ def parse_positive_int(value: str) -> int | None:
     return amount if amount > 0 else None
 
 
+def safe_non_negative_int(value, default: int = 0) -> int:
+    try:
+        parsed = int(value)
+    except (TypeError, ValueError):
+        parsed = default
+    return max(0, parsed)
+
+
 def atlas_unit_price(level: int) -> int:
     return ATLAS_BASE_PRICE
 
@@ -6369,7 +6377,7 @@ async def cruise_missiles_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id) if update.effective_user else None
-    atlas_level = max(1, record.get("atlas_level", 1)) if record else 1
+    atlas_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1)) if record else 1
     atlas_price = atlas_unit_price(atlas_level)
     items = [f"قدر 💰 {QADR_PRICE}", f"اطلس 💰 {atlas_price}"]
     if record and record.get("level", 1) >= 6:
@@ -6390,8 +6398,9 @@ async def atlas_purchase_prompt(update: Update, context: ContextTypes.DEFAULT_TY
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id)
-    current_level = max(1, record.get("atlas_level", 1))
-    max_buy = atlas_max_buy(record["coins"], current_level)
+    current_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1))
+    user_coins = safe_non_negative_int(record.get("coins", 0))
+    max_buy = atlas_max_buy(user_coins, current_level)
     current_price = atlas_unit_price(current_level)
     context.user_data["awaiting_support_message"] = False
     context.user_data["awaiting_coin_transfer_target"] = False
@@ -6454,14 +6463,15 @@ async def handle_atlas_quantity(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ تعداد وارد شده خیلی زیاد است.")
         return
     record = get_user_record(update.effective_user.id)
-    current_level = max(1, record.get("atlas_level", 1))
+    current_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1))
     total_cost = atlas_total_cost(current_level, quantity)
-    if record["coins"] < total_cost:
+    current_coins = safe_non_negative_int(record.get("coins", 0))
+    if current_coins < total_cost:
         await update.message.reply_text("❌ سکه کافی ندارید.")
         return
-    record["coins"] -= total_cost
-    record["atlas_missiles"] += quantity
-    record["missiles"] += quantity
+    record["coins"] = current_coins - total_cost
+    record["atlas_missiles"] = safe_non_negative_int(record.get("atlas_missiles", 0)) + quantity
+    record["missiles"] = safe_non_negative_int(record.get("missiles", 0)) + quantity
     record["atlas_level"] = current_level + quantity
     save_user_data_store()
     context.user_data["awaiting_atlas_quantity"] = False
