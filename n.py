@@ -1092,10 +1092,10 @@ def missile_reward_range(name: str, missile_key: str | None = None) -> tuple[int
 
 def calculate_attack_reward(defender: dict, reward_range: tuple[int, int]) -> int:
     base_reward = random.randint(*reward_range)
-    defender_coins = defender.get("coins", 0)
+    defender_coins = max(0, int(defender.get("coins", 0) or 0))
     if defender_coins >= base_reward:
         return base_reward
-    return int(defender_coins * 0.75)
+    return max(0, int(defender_coins * 0.75))
 
 
 def calculate_rank_transfer(attacker: dict, defender: dict, damage: int) -> tuple[int, int]:
