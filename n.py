@@ -782,8 +782,8 @@ async def is_user_subscribed(
     try:
         member = await context.bot.get_chat_member(chat_id=chat_id_or_username, user_id=user_id)
     except Exception:
-        # اگر بات دسترسی به چت ندارد (مثلاً ادمین نیست یا چت خصوصی است) بررسی را رد می‌کنیم
-        return True
+        # اگر بررسی عضویت با خطا مواجه شد، عضویت را تأییدشده در نظر نگیریم.
+        return False
     return member.status not in {"left", "kicked"}
 
 
@@ -852,8 +852,7 @@ async def check_subscriptions_callback(update: Update, context: ContextTypes.DEF
     await update.callback_query.answer("✅ عضویت تأیید شد.")
     try:
         await update.callback_query.edit_message_text(
-            "✅ عضویت شما تأیید شد. می‌توانید از منوها استفاده کنید.",
-            reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
+            "✅ عضویت شما تأیید شد.\nبه ربات خوش آمدید! دوباره /start بزنید.",
         )
     except Exception:
         pass
@@ -4813,6 +4812,7 @@ async def admin_panel(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "/admin_protection_on\n"
         "/admin_protection_off\n"
         "/list_assets\n"
+        "/missile_owners <missile_name>\n"
         "/reset_caps\n"
         "/create_gift <uses> <amount>\n"
         "/redeem <code>\n"
@@ -7483,6 +7483,50 @@ async def user_assets_by_id(update: Update, context: ContextTypes.DEFAULT_TYPE):
     await admin_only_reply(update, format_user_assets(record))
 
 
+async def missile_owners(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if not is_admin(update.effective_user.id):
+        await admin_only_reply(update, "⛔️ فقط ادمین اجازه این کار رو داره.")
+        return
+    if not context.args:
+        await admin_only_reply(update, "فرمت: /missile_owners <missile_name>")
+        return
+
+    missile_name = " ".join(context.args).strip()
+    missile_key = find_missile_key(missile_name)
+    if missile_key is None:
+        await admin_only_reply(update, "❌ نام موشک معتبر نیست.")
+        return
+
+    canonical_name = next(
+        (label for label, key in MISSILE_NAME_TO_KEY.items() if key == missile_key),
+        missile_name,
+    )
+
+    holders: list[tuple[int, str, int]] = []
+    for record in user_data_store.values():
+        count = int(record.get(missile_key, 0) or 0)
+        if count <= 0:
+            continue
+        user_id = int(record.get("id", 0) or 0)
+        display_name = record.get("display_name", "کاربر")
+        holders.append((user_id, display_name, count))
+
+    if not holders:
+        await admin_only_reply(update, f"هیچ کاربری موشک «{canonical_name}» ندارد.")
+        return
+
+    holders.sort(key=lambda item: item[2], reverse=True)
+    lines = [f"📊 لیست دارندگان موشک «{canonical_name}» (بیشترین به کمترین):"]
+    for index, (user_id, display_name, count) in enumerate(holders, start=1):
+        lines.append(f"{index}. 👤 {display_name} | 🆔 {user_id} | 🧨 {count}")
+
+    chunk_size = 40
+    for i in range(0, len(lines), chunk_size):
+        await admin_only_reply(update, "\n".join(lines[i : i + chunk_size]))
+
+
 async def reset_caps(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None or update.effective_user is None:
         return
@@ -8177,6 +8221,7 @@ def main():
     app.add_handler(CommandHandler("adjust_balance", adjust_balance))
     app.add_handler(CommandHandler("list_assets", list_all_assets))
     app.add_handler(CommandHandler("user_assets", user_assets_by_id))
+    app.add_handler(CommandHandler("missile_owners", missile_owners))
     app.add_handler(CommandHandler("reset_caps", reset_caps))
     app.add_handler(CommandHandler("ban", ban_user))
     app.add_handler(CommandHandler("bang", permanent_ban))
