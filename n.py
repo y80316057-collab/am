@@ -3693,7 +3693,7 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         record["rank"] = record.get("rank", 0) + rank_gain
         opponent_record["rank"] = max(0, opponent_record.get("rank", 0) - rank_loss)
     apply_crystal_attack_limits(record, opponent_record)
-    leveled_to_three = apply_experience(record, missile_experience(missile_name))
+    leveled_to_three = False
     update_league(record)
     opponent_record["last_attack_from"] = update.effective_user.id
     add_revenge_target(opponent_record, update.effective_user.id)
@@ -4060,7 +4060,7 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
     add_duel_damage(update.effective_chat.id, attacker_record.get("id"), defender_record.get("id"), damage)
     if duel is None:
         apply_crystal_attack_limits(attacker_record, defender_record)
-    leveled_to_three = apply_experience(attacker_record, missile_experience(missile_name))
+    leveled_to_three = False
     update_league(attacker_record)
     defender_record["last_attack_from"] = update.effective_user.id
     add_revenge_target(defender_record, update.effective_user.id)
@@ -5355,7 +5355,7 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         record["rank"] = record.get("rank", 0) + rank_gain
         target_record["rank"] = max(0, target_record.get("rank", 0) - rank_loss)
     apply_crystal_attack_limits(record, target_record)
-    leveled_to_three = apply_experience(record, missile_experience(missile_name))
+    leveled_to_three = False
     update_league(record)
     update_league(target_record)
     if leveled_to_three:
