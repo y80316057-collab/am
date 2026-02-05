@@ -7093,24 +7093,30 @@ async def starpass_rewards(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if not record.get("starpass_started_at"):
         record["starpass_started_at"] = now.isoformat()
     today_key = starpass_day_key(now)
-    day_index = record.get("starpass_day", 1)
-    allowed_day = starpass_allowed_day(record, now)
-    if day_index > allowed_day:
+    if record.get("starpass_last_claim") == today_key:
         await update.message.reply_text(
-            "⏳ هنوز روز بعدی سولارپس باز نشده است.",
+            "⏳ جایزه امروز سولارپس را قبلاً دریافت کرده‌اید.",
             reply_markup=starpass_menu_markup(),
         )
         return
+    day_index = max(1, int(record.get("starpass_day", 1) or 1))
+    allowed_day = starpass_allowed_day(record, now)
     if day_index > len(STARPASS_REWARDS):
         await update.message.reply_text(
             "✅ تمام جوایز این فصل را دریافت کردید.",
             reply_markup=starpass_menu_markup(),
         )
         return
+    if day_index > allowed_day:
+        await update.message.reply_text(
+            "⏳ هنوز روز بعدی سولارپس باز نشده است.",
+            reply_markup=starpass_menu_markup(),
+        )
+        return
     reward = STARPASS_REWARDS[day_index - 1]
     apply_starpass_reward(record, reward)
     record["starpass_last_claim"] = today_key
-    record["starpass_day"] = min(day_index + 1, len(STARPASS_REWARDS))
+    record["starpass_day"] = day_index + 1
     save_user_data_store()
     await update.message.reply_text(
         f"✅ جایزه روز {reward['day']} دریافت شد: {reward['label']}",
