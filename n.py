@@ -1167,26 +1167,8 @@ def apply_level_pass_reward(record: dict, reward: dict) -> None:
 
 
 def add_level_pass_exp(record: dict, missile_key: str | None) -> None:
-    if missile_key is None:
-        return
-    if record.get("level_pass_level", 1) >= LEVEL_PASS_MAX_LEVEL:
-        return
-    gain = MISSILE_EXP_VALUES.get(missile_key, 1)
-    record["level_pass_exp"] = record.get("level_pass_exp", 0) + gain
-    exp_needed = max(1, record.get("level_pass_exp_needed", level_pass_exp_needed(record.get("level_pass_level", 1))))
-    leveled = False
-    while (
-        record["level_pass_exp"] >= exp_needed
-        and record.get("level_pass_level", 1) < LEVEL_PASS_MAX_LEVEL
-    ):
-        record["level_pass_exp"] -= exp_needed
-        record["level_pass_level"] = record.get("level_pass_level", 1) + 1
-        record["level_pass_exp_needed"] = level_pass_exp_needed(record["level_pass_level"])
-        reward = level_pass_reward_for_level(record["level_pass_level"])
-        apply_level_pass_reward(record, reward)
-        leveled = True
-    if leveled:
-        save_user_data_store()
+    # لول‌آپ پس با حمله موشکی غیرفعال است.
+    return
 
 
 def level_pass_status_text(record: dict) -> str:
@@ -1239,23 +1221,8 @@ def apply_level_pass_reward(record: dict, reward: dict) -> None:
 
 
 def add_level_pass_exp(record: dict, missile_key: str | None) -> None:
-    if missile_key is None:
-        return
-    if record.get("level_pass_level", 1) >= LEVEL_PASS_MAX_LEVEL:
-        return
-    gain = MISSILE_EXP_VALUES.get(missile_key, 1)
-    record["level_pass_exp"] = record.get("level_pass_exp", 0) + gain
-    exp_needed = max(1, record.get("level_pass_exp_needed", LEVEL_PASS_EXP_PER_LEVEL))
-    leveled = False
-    while record["level_pass_exp"] >= exp_needed and record.get("level_pass_level", 1) < LEVEL_PASS_MAX_LEVEL:
-        record["level_pass_exp"] -= exp_needed
-        record["level_pass_level"] = record.get("level_pass_level", 1) + 1
-        record["level_pass_exp_needed"] = LEVEL_PASS_EXP_PER_LEVEL
-        reward = level_pass_reward_for_level(record["level_pass_level"])
-        apply_level_pass_reward(record, reward)
-        leveled = True
-    if leveled:
-        save_user_data_store()
+    # لول‌آپ پس با حمله موشکی غیرفعال است.
+    return
 
 
 def missile_experience(name: str) -> int:
@@ -3693,7 +3660,7 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         record["rank"] = record.get("rank", 0) + rank_gain
         opponent_record["rank"] = max(0, opponent_record.get("rank", 0) - rank_loss)
     apply_crystal_attack_limits(record, opponent_record)
-    leveled_to_three = False
+    leveled_to_three = apply_experience(record, missile_experience(missile_name))
     update_league(record)
     opponent_record["last_attack_from"] = update.effective_user.id
     add_revenge_target(opponent_record, update.effective_user.id)
@@ -4060,7 +4027,7 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
     add_duel_damage(update.effective_chat.id, attacker_record.get("id"), defender_record.get("id"), damage)
     if duel is None:
         apply_crystal_attack_limits(attacker_record, defender_record)
-    leveled_to_three = False
+    leveled_to_three = apply_experience(attacker_record, missile_experience(missile_name))
     update_league(attacker_record)
     defender_record["last_attack_from"] = update.effective_user.id
     add_revenge_target(defender_record, update.effective_user.id)
@@ -5355,7 +5322,7 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         record["rank"] = record.get("rank", 0) + rank_gain
         target_record["rank"] = max(0, target_record.get("rank", 0) - rank_loss)
     apply_crystal_attack_limits(record, target_record)
-    leveled_to_three = False
+    leveled_to_three = apply_experience(record, missile_experience(missile_name))
     update_league(record)
     update_league(target_record)
     if leveled_to_three:
