@@ -375,6 +375,11 @@ def setup_logging() -> None:
     stream_handler.setFormatter(formatter)
     logger.addHandler(file_handler)
     logger.addHandler(stream_handler)
+    # کاهش لاگ‌های پرتکرار کتابخانه‌ها برای جلوگیری از کندی پاسخ بات
+    logging.getLogger("httpx").setLevel(logging.WARNING)
+    logging.getLogger("httpcore").setLevel(logging.WARNING)
+    logging.getLogger("telegram").setLevel(logging.WARNING)
+    logging.getLogger("urllib3").setLevel(logging.WARNING)
 
 
 def load_pending_payments() -> None:
@@ -1057,14 +1062,22 @@ def level_pass_exp_needed(level: int) -> int:
 
 
 def normalize_missile_name(text: str) -> str:
-    return re.sub(r"\s+", " ", text.strip())
+    normalized = unicodedata.normalize("NFKC", text or "")
+    normalized = normalized.replace("ي", "ی").replace("ك", "ک")
+    normalized = normalized.replace("‌", " ")
+    normalized = re.sub(r"[-_ـ]+", " ", normalized)
+    return re.sub(r"\s+", " ", normalized).strip().casefold()
+
+
+def normalize_missile_compact(text: str) -> str:
+    return normalize_missile_name(text).replace(" ", "")
 
 
 def find_missile_key(name: str) -> str | None:
     normalized = normalize_missile_name(name)
-    normalized_compact = normalized.replace(" ", "")
+    normalized_compact = normalize_missile_compact(name)
     for label, key in MISSILE_NAME_TO_KEY.items():
-        if normalized == label or normalized_compact == label.replace(" ", ""):
+        if normalized == normalize_missile_name(label) or normalized_compact == normalize_missile_compact(label):
             return key
     return None
 
@@ -1073,9 +1086,9 @@ def missile_damage(name: str, missile_key: str | None = None) -> int:
     if missile_key and missile_key in MISSILE_DAMAGE_BY_KEY:
         low, high = MISSILE_DAMAGE_BY_KEY[missile_key]
         return random.randint(low, high)
-    normalized = (name or "").replace(" ", "").replace("‌", "")
+    normalized = normalize_missile_compact(name)
     for label, damage_range in MISSILE_DAMAGE_BY_NAME.items():
-        if label.replace(" ", "").replace("‌", "") == normalized:
+        if normalize_missile_compact(label) == normalized:
             return random.randint(*damage_range)
     return random.randint(ATLAS_DAMAGE_MIN, ATLAS_DAMAGE_MAX)
 
@@ -1083,9 +1096,9 @@ def missile_damage(name: str, missile_key: str | None = None) -> int:
 def missile_reward_range(name: str, missile_key: str | None = None) -> tuple[int, int]:
     if missile_key and missile_key in MISSILE_REWARD_BY_KEY:
         return MISSILE_REWARD_BY_KEY[missile_key]
-    normalized = (name or "").replace(" ", "").replace("‌", "")
+    normalized = normalize_missile_compact(name)
     for label, reward_range in MISSILE_REWARD_BY_NAME.items():
-        if label.replace(" ", "").replace("‌", "") == normalized:
+        if normalize_missile_compact(label) == normalized:
             return reward_range
     return MISSILE_REWARD_BY_NAME["اطلس"]
 
@@ -1471,10 +1484,10 @@ def maybe_reward_inviter(record: dict) -> bool:
 
 
 def resolve_defense(defender: dict, missile_name: str) -> tuple[bool, str]:
-    normalized = normalize_missile_name(missile_name)
-    if "رد لاین" in normalized or "ردلاین" in normalized:
+    normalized = normalize_missile_compact(missile_name)
+    if "ردلاین" in normalized:
         return False, "🚀 پدافند روی رد لاین اثر ندارد."
-    if "هسته‌ای" in normalized:
+    if "هستهای" in normalized:
         return False, "☢️ پدافند روی موشک هسته‌ای اثر ندارد."
     active_defense = defender.get("active_defense")
     active_item = next((item for item in DEFENSE_ITEMS if item["key"] == active_defense), None)
