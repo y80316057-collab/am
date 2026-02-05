@@ -792,6 +792,8 @@ async def ensure_required_memberships(
     context: ContextTypes.DEFAULT_TYPE,
     via_callback: bool = False,
 ) -> bool:
+    if not is_private_chat(update):
+        return False
     user = update.effective_user
     if user is None:
         return False
@@ -6369,7 +6371,7 @@ async def cruise_missiles_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     record = get_user_record(update.effective_user.id) if update.effective_user else None
     atlas_level = max(1, record.get("atlas_level", 1)) if record else 1
     atlas_price = atlas_unit_price(atlas_level)
-    items = [f"قدر 💰 {QADR_PRICE}", f"اطلس ?? {atlas_price}"]
+    items = [f"قدر 💰 {QADR_PRICE}", f"اطلس 💰 {atlas_price}"]
     if record and record.get("level", 1) >= 6:
         items.append(f"خیبرشکن 💰 {KHEIBAR_PRICE}")
     rows = [[item] for item in items]
