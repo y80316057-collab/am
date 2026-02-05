@@ -1701,7 +1701,7 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
         ["حمله جهانی 🌐"],
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
         ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
-        ["معدن جم 💎", "تبادل سکه 💸", "کلن 👥"],
+        ["معدن جم 💎", "تبادل سکه 💵", "کلن 👥"],
         ["راهنما ❓", "پشتیبانی 📞", "خرید آیتم 💳"],
         ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
     ]
@@ -3305,7 +3305,7 @@ async def coin_transfer_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     reset_daily_transfer_if_needed(record, today)
     remaining = COIN_TRANSFER_DAILY_LIMIT - record.get("daily_coin_transfer", 0)
     await update.message.reply_text(
-        "💸 تبادل سکه\n"
+        "💵 تبادل سکه\n"
         "آیدی عددی گیرنده را وارد کنید:\n"
         f"سقف انتقال امروز: {COIN_TRANSFER_DAILY_LIMIT} سکه\n"
         f"باقی‌مانده امروز: {remaining} سکه",
@@ -3329,7 +3329,7 @@ async def handle_coin_transfer_input(update: Update, context: ContextTypes.DEFAU
         context.user_data["awaiting_coin_transfer_target"] = False
         context.user_data["awaiting_coin_transfer_amount"] = True
         await update.message.reply_text(
-            "💸 تعداد سکه برای انتقال را وارد کنید:",
+            "💵 تعداد سکه برای انتقال را وارد کنید:",
             reply_markup=coin_transfer_markup(),
         )
         return
@@ -3368,7 +3368,7 @@ async def handle_coin_transfer_input(update: Update, context: ContextTypes.DEFAU
             context,
             int(target_id),
             (
-                "💸 انتقال سکه\n"
+                "💵 انتقال سکه\n"
                 f"👤 فرستنده: {update.effective_user.id}\n"
                 f"💰 مبلغ: {amount} سکه"
             ),
@@ -6344,8 +6344,7 @@ async def cruise_missiles_menu(update: Update, context: ContextTypes.DEFAULT_TYP
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id) if update.effective_user else None
-    atlas_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1)) if record else 1
-    atlas_price = atlas_unit_price(atlas_level)
+    atlas_price = ATLAS_BASE_PRICE
     items = [f"قدر 💰 {QADR_PRICE}", f"اطلس 💰 {atlas_price}"]
     if record and record.get("level", 1) >= 6:
         items.append(f"خیبرشکن 💰 {KHEIBAR_PRICE}")
@@ -6365,10 +6364,9 @@ async def atlas_purchase_prompt(update: Update, context: ContextTypes.DEFAULT_TY
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id)
-    current_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1))
     user_coins = safe_non_negative_int(record.get("coins", 0))
-    max_buy = atlas_max_buy(user_coins, current_level)
-    current_price = atlas_unit_price(current_level)
+    current_price = ATLAS_BASE_PRICE
+    max_buy = user_coins // current_price if current_price > 0 else 0
     context.user_data["awaiting_support_message"] = False
     context.user_data["awaiting_coin_transfer_target"] = False
     context.user_data["awaiting_coin_transfer_amount"] = False
@@ -6430,8 +6428,8 @@ async def handle_atlas_quantity(update: Update, context: ContextTypes.DEFAULT_TY
         await update.message.reply_text("❌ تعداد وارد شده خیلی زیاد است.")
         return
     record = get_user_record(update.effective_user.id)
-    current_level = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1))
-    total_cost = atlas_total_cost(current_level, quantity)
+    unit_price = ATLAS_BASE_PRICE
+    total_cost = unit_price * quantity
     current_coins = safe_non_negative_int(record.get("coins", 0))
     if current_coins < total_cost:
         await update.message.reply_text("❌ سکه کافی ندارید.")
@@ -6439,7 +6437,7 @@ async def handle_atlas_quantity(update: Update, context: ContextTypes.DEFAULT_TY
     record["coins"] = current_coins - total_cost
     record["atlas_missiles"] = safe_non_negative_int(record.get("atlas_missiles", 0)) + quantity
     record["missiles"] = safe_non_negative_int(record.get("missiles", 0)) + quantity
-    record["atlas_level"] = current_level + quantity
+    record["atlas_level"] = max(1, safe_non_negative_int(record.get("atlas_level", 1), 1))
     save_user_data_store()
     context.user_data["awaiting_atlas_quantity"] = False
     await update.message.reply_text(
@@ -8250,7 +8248,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^دارایی 📦$"), assets_menu))
     app.add_handler(MessageHandler(filters.Regex("^فروشگاه 🛒$"), store_menu))
     app.add_handler(MessageHandler(filters.Regex("^خرید آیتم 💳$"), shop_menu))
-    app.add_handler(MessageHandler(filters.Regex("^تبادل سکه 💸$"), coin_transfer_menu))
+    app.add_handler(MessageHandler(filters.Regex("^تبادل سکه (💵|💸)$"), coin_transfer_menu))
     app.add_handler(MessageHandler(filters.Regex("^کلن 👥$"), clan_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن طلا ⛏️$"), gold_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن جم 💎$"), gem_mine_menu))
