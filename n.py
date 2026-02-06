@@ -126,7 +126,23 @@ CLAN_CREATE_COST = 3000
 CLAN_LEVEL_COSTS = {2: 10000, 3: 15000, 4: 25000, 5: 50000}
 CLAN_TANK_PURCHASE_COST = 100000
 CLAN_TANK_LEVEL_COSTS = {2: 50000, 3: 100000, 4: 150000, 5: 200000}
-CLAN_WAR_TEAM_SIZE = 10
+CLAN_WAR_TEAM_MIN_SIZE = 2
+CLAN_WAR_TEAM_MAX_SIZE = 5
+CLAN_ARSENAL_SLOTS_PER_LEVEL = 5
+CLAN_ARSENAL_WEIGHTS = {
+    "qadr_missiles": 1,
+    "atlas_missiles": 1,
+    "kheibar_missiles": 1,
+    "emad_missiles": 2,
+    "sajjil_missiles": 2,
+    "shahab_missiles": 2,
+    "patriot_missiles": 2,
+    "khorramshahr_missiles": 3,
+    "chemical_missiles": 3,
+    "nuclear_missiles": 4,
+    "redline_missiles": 5,
+    "falcon_missiles": 5,
+}
 CLAN_WAR_ATTACKS_PER_USER = 5
 CLAN_CASTLE_MAX_LEVEL = 10
 CLAN_CASTLE_LEVEL_COST = 10000
@@ -999,6 +1015,8 @@ def reset_clan_prompt_flags(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data["awaiting_clan_remove_member"] = False
     context.user_data["awaiting_clan_leader_change"] = False
     context.user_data["awaiting_clan_sub_leader"] = False
+    context.user_data["awaiting_clan_arsenal_deposit"] = False
+    context.user_data["awaiting_clan_arsenal_withdraw"] = False
     context.user_data.pop("clan_war_selection", None)
     context.user_data.pop("awaiting_clan_war_attack", None)
 
@@ -1294,6 +1312,47 @@ def get_clan_capacity(level: int) -> int:
     return max(1, level) * 10
 
 
+def get_clan_arsenal_capacity(level: int) -> int:
+    return max(1, level) * CLAN_ARSENAL_SLOTS_PER_LEVEL
+
+
+def clan_war_team_size(member_count: int) -> int:
+    return min(CLAN_WAR_TEAM_MAX_SIZE, max(CLAN_WAR_TEAM_MIN_SIZE, member_count))
+
+
+def get_clan_arsenal(clan: dict) -> dict:
+    arsenal = clan.setdefault("arsenal", {})
+    if not isinstance(arsenal, dict):
+        arsenal = {}
+        clan["arsenal"] = arsenal
+    return arsenal
+
+
+def get_clan_arsenal_used(clan: dict) -> int:
+    arsenal = get_clan_arsenal(clan)
+    used = 0
+    for key, count in arsenal.items():
+        weight = CLAN_ARSENAL_WEIGHTS.get(key)
+        if weight and count:
+            used += weight * max(0, int(count))
+    return used
+
+
+def get_clan_arsenal_free(clan: dict) -> int:
+    capacity = get_clan_arsenal_capacity(clan.get("level", 1))
+    return max(0, capacity - get_clan_arsenal_used(clan))
+
+
+def format_clan_arsenal_items(clan: dict) -> str:
+    arsenal = get_clan_arsenal(clan)
+    lines = []
+    for label, key in MISSILE_NAME_TO_KEY.items():
+        count = arsenal.get(key, 0)
+        if count:
+            lines.append(f"- {label}: {count}")
+    return "\n".join(lines) if lines else "خالی"
+
+
 def get_clan_for_user(record: dict) -> dict | None:
     clan_id = record.get("clan_id")
     if not clan_id:
@@ -1304,6 +1363,7 @@ def get_clan_for_user(record: dict) -> dict | None:
         clan.setdefault("castle_level", 0)
         clan.setdefault("cups", 0)
         clan.setdefault("sub_leaders", [])
+        clan.setdefault("arsenal", {})
     return clan
 
 
@@ -1367,7 +1427,7 @@ def pick_clan_war_opponent(current_clan_id: str) -> dict | None:
         if clan_id == current_clan_id:
             continue
         members = clan.get("members", [])
-        if len(members) >= CLAN_WAR_TEAM_SIZE:
+        if len(members) >= CLAN_WAR_TEAM_MIN_SIZE:
             if any(get_user_record(int(member_id)).get("clan_war_id") for member_id in members):
                 continue
             candidates.append(clan)
@@ -1429,6 +1489,7 @@ async def queue_clan_war_request(
     context: ContextTypes.DEFAULT_TYPE,
     clan: dict,
     team: list[int],
+    team_size: int,
     reply_target,
 ) -> str:
     remove_clan_from_queue(str(clan.get("id")))
@@ -1437,13 +1498,14 @@ async def queue_clan_war_request(
     valid_queue = []
     for item in clan_war_queue:
         opp = clan_data_store.get(str(item.get("clan_id")))
-        if opp and len(opp.get("members", [])) >= CLAN_WAR_TEAM_SIZE:
+        required_size = item.get("team_size", CLAN_WAR_TEAM_MAX_SIZE)
+        if opp and len(opp.get("members", [])) >= required_size:
             valid_queue.append(item)
     clan_war_queue.clear()
     clan_war_queue.extend(valid_queue)
     opponent_entry = None
     for item in clan_war_queue:
-        if item.get("clan_id") != str(clan.get("id")):
+        if item.get("clan_id") != str(clan.get("id")) and item.get("team_size") == team_size:
             opponent_entry = item
             break
     if opponent_entry is None:
@@ -1451,6 +1513,7 @@ async def queue_clan_war_request(
             {
                 "clan_id": str(clan.get("id")),
                 "team": team,
+                "team_size": team_size,
                 "requested_at": now.isoformat(),
             }
         )
@@ -1460,7 +1523,7 @@ async def queue_clan_war_request(
     if not opponent_clan:
         return "❌ کلن حریف یافت نشد. دوباره تلاش کنید."
     opponent_team = opponent_entry.get("team", [])
-    if len(opponent_team) != CLAN_WAR_TEAM_SIZE:
+    if len(opponent_team) != team_size:
         return "❌ اعضای حریف کامل نبود."
     starts_at = now + timedelta(minutes=CLAN_WAR_PREP_MINUTES)
     ok, war_id = await start_clan_war_session(
@@ -1469,6 +1532,7 @@ async def queue_clan_war_request(
         opponent_clan,
         team,
         opponent_team,
+        team_size,
         starts_at=starts_at,
     )
     if not ok:
@@ -2043,6 +2107,7 @@ def clan_panel_markup(is_manager: bool, is_leader: bool = False) -> ReplyKeyboar
         keyboard.append(["تغییر لیدر 👑", "ساب لیدر 👥"])
         keyboard.append(["تانک کلن 🪖"])
         keyboard.append(["قلعه کلن 🏰"])
+    keyboard.append(["انبار موشکی کلن 🚀"])
     if is_manager:
         keyboard.append(["کلن وار ⚔️"])
     keyboard.append(["بازگشت به منوی اصلی ↩️"])
@@ -2060,7 +2125,7 @@ def clan_war_menu_markup(is_leader: bool, has_active_war: bool) -> ReplyKeyboard
 
 
 def clan_war_selection_markup(
-    member_ids: list[int], selected: set[int]
+    member_ids: list[int], selected: set[int], team_size: int
 ) -> InlineKeyboardMarkup:
     buttons = []
     for member_id in member_ids:
@@ -2084,6 +2149,14 @@ def clan_war_selection_markup(
         ]
     )
     return InlineKeyboardMarkup(buttons)
+
+
+def clan_arsenal_menu_markup(can_withdraw: bool) -> ReplyKeyboardMarkup:
+    keyboard = [["واریز موشک کلن 🚀"]]
+    if can_withdraw:
+        keyboard.append(["برداشت موشک کلن 🎯"])
+    keyboard.append(["بازگشت به منوی کلن ↩️"])
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
 
 
 def clan_members_markup(is_leader: bool) -> ReplyKeyboardMarkup:
@@ -2908,7 +2981,7 @@ async def help_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "help_clan_war": (
             "⚔️ راهنمای کلن وار\n\n"
             "• فقط لیدر می‌تواند وار را شروع کند.\n"
-            f"• هر وار با {CLAN_WAR_TEAM_SIZE} نفر از هر کلن شروع می‌شود.\n"
+            f"• هر وار با ۲ تا {CLAN_WAR_TEAM_MAX_SIZE} نفر از هر کلن شروع می‌شود.\n"
             f"• هر نفر {CLAN_WAR_ATTACKS_PER_USER} حمله دارد.\n"
             "• برای حمله از منوی کلن وار در پیوی استفاده کنید.\n"
             "• برنده بر اساس بیشترین دمیج کلن تعیین می‌شود."
@@ -3046,6 +3119,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if context.user_data.get("awaiting_clan_war_attack"):
         await handle_clan_war_attack(update, context)
+        return
+    if context.user_data.get("awaiting_clan_arsenal_deposit"):
+        await handle_clan_arsenal_deposit(update, context)
+        return
+    if context.user_data.get("awaiting_clan_arsenal_withdraw"):
+        await handle_clan_arsenal_withdraw(update, context)
         return
     if context.user_data.get("awaiting_topup_receipt"):
         await handle_topup_receipt(update, context)
@@ -4607,6 +4686,7 @@ async def handle_clan_create(update: Update, context: ContextTypes.DEFAULT_TYPE)
         "cups": 0,
         "tag": None,
         "requests": [],
+        "arsenal": {},
     }
     record["coins"] -= CLAN_CREATE_COST
     record["clan_id"] = clan_id
@@ -4906,6 +4986,179 @@ async def handle_clan_sub_leader(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text("✅ این عضو به عنوان ساب‌لیدر ثبت شد.")
 
 
+async def clan_arsenal_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    clan = get_clan_for_user(record)
+    if not clan:
+        await update.message.reply_text("❌ شما عضو کلن نیستید.")
+        return
+    is_manager = user_is_clan_leader(record, clan) or user_is_sub_leader(record, clan)
+    capacity = get_clan_arsenal_capacity(clan.get("level", 1))
+    used = get_clan_arsenal_used(clan)
+    await update.message.reply_text(
+        "🚀 انبار موشکی کلن\n"
+        f"ظرفیت: {used}/{capacity}\n"
+        f"فضای خالی: {max(0, capacity - used)}\n\n"
+        "موشک‌ها:\n"
+        f"{format_clan_arsenal_items(clan)}\n\n"
+        "برای استفاده از موشک کلن در کلن‌وار، بعد از اسم موشک یک نقطه بگذارید (مثال: اطلس.).",
+        reply_markup=clan_arsenal_menu_markup(is_manager),
+    )
+
+
+async def clan_arsenal_deposit_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    clan = get_clan_for_user(record)
+    if not clan:
+        await update.message.reply_text("❌ شما عضو کلن نیستید.")
+        return
+    context.user_data["awaiting_clan_arsenal_deposit"] = True
+    context.user_data["awaiting_clan_arsenal_withdraw"] = False
+    await update.message.reply_text(
+        "📦 واریز موشک به انبار کلن\n"
+        "نام موشک و تعداد را ارسال کنید.\n"
+        "مثال: اطلس 3",
+        reply_markup=ReplyKeyboardMarkup(
+            [["بازگشت به منوی کلن ↩️"]], resize_keyboard=True
+        ),
+    )
+
+
+async def clan_arsenal_withdraw_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    clan = get_clan_for_user(record)
+    if not clan:
+        await update.message.reply_text("❌ شما عضو کلن نیستید.")
+        return
+    if not (user_is_clan_leader(record, clan) or user_is_sub_leader(record, clan)):
+        await update.message.reply_text("❌ فقط لیدر یا ساب‌لیدر می‌تواند برداشت کند.")
+        return
+    context.user_data["awaiting_clan_arsenal_withdraw"] = True
+    context.user_data["awaiting_clan_arsenal_deposit"] = False
+    await update.message.reply_text(
+        "🎯 برداشت موشک از انبار کلن\n"
+        "نام موشک و تعداد را ارسال کنید.\n"
+        "مثال: اطلس 2",
+        reply_markup=ReplyKeyboardMarkup(
+            [["بازگشت به منوی کلن ↩️"]], resize_keyboard=True
+        ),
+    )
+
+
+async def handle_clan_arsenal_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    text = (update.message.text or "").strip()
+    if text == "بازگشت به منوی کلن ↩️":
+        context.user_data["awaiting_clan_arsenal_deposit"] = False
+        await clan_menu(update, context)
+        return
+    parts = text.split()
+    if len(parts) < 2:
+        await update.message.reply_text("❌ فرمت درست نیست. مثال: اطلس 3")
+        return
+    label = " ".join(parts[:-1])
+    quantity = parse_positive_int(parts[-1])
+    if quantity is None:
+        await update.message.reply_text("❌ تعداد معتبر نیست.")
+        return
+    missile_key = MISSILE_NAME_TO_KEY.get(label)
+    if missile_key is None:
+        await update.message.reply_text("❌ نام موشک معتبر نیست.")
+        return
+    weight = CLAN_ARSENAL_WEIGHTS.get(missile_key)
+    if weight is None:
+        await update.message.reply_text("❌ این موشک برای انبار کلن فعال نیست.")
+        return
+    record = get_user_record(update.effective_user.id)
+    clan = get_clan_for_user(record)
+    if not clan:
+        await update.message.reply_text("❌ شما عضو کلن نیستید.")
+        return
+    if record.get(missile_key, 0) < quantity:
+        await update.message.reply_text("❌ موجودی موشک شما کافی نیست.")
+        return
+    required_space = weight * quantity
+    free_space = get_clan_arsenal_free(clan)
+    if required_space > free_space:
+        await update.message.reply_text(
+            f"❌ ظرفیت کافی نیست. فضای خالی: {free_space}"
+        )
+        return
+    record[missile_key] -= quantity
+    record["missiles"] = max(0, record.get("missiles", 0) - quantity)
+    arsenal = get_clan_arsenal(clan)
+    arsenal[missile_key] = arsenal.get(missile_key, 0) + quantity
+    save_user_data_store()
+    save_clan_data_store()
+    context.user_data["awaiting_clan_arsenal_deposit"] = False
+    await update.message.reply_text(
+        f"✅ {quantity} {label} به انبار کلن واریز شد.",
+        reply_markup=clan_arsenal_menu_markup(
+            user_is_clan_leader(record, clan) or user_is_sub_leader(record, clan)
+        ),
+    )
+
+
+async def handle_clan_arsenal_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    text = (update.message.text or "").strip()
+    if text == "بازگشت به منوی کلن ↩️":
+        context.user_data["awaiting_clan_arsenal_withdraw"] = False
+        await clan_menu(update, context)
+        return
+    parts = text.split()
+    if len(parts) < 2:
+        await update.message.reply_text("❌ فرمت درست نیست. مثال: اطلس 2")
+        return
+    label = " ".join(parts[:-1])
+    quantity = parse_positive_int(parts[-1])
+    if quantity is None:
+        await update.message.reply_text("❌ تعداد معتبر نیست.")
+        return
+    missile_key = MISSILE_NAME_TO_KEY.get(label)
+    if missile_key is None:
+        await update.message.reply_text("❌ نام موشک معتبر نیست.")
+        return
+    record = get_user_record(update.effective_user.id)
+    clan = get_clan_for_user(record)
+    if not clan:
+        await update.message.reply_text("❌ شما عضو کلن نیستید.")
+        return
+    if not (user_is_clan_leader(record, clan) or user_is_sub_leader(record, clan)):
+        await update.message.reply_text("❌ فقط لیدر یا ساب‌لیدر می‌تواند برداشت کند.")
+        return
+    arsenal = get_clan_arsenal(clan)
+    if arsenal.get(missile_key, 0) < quantity:
+        await update.message.reply_text("❌ موجودی انبار کلن کافی نیست.")
+        return
+    arsenal[missile_key] -= quantity
+    if arsenal.get(missile_key, 0) <= 0:
+        arsenal.pop(missile_key, None)
+    record[missile_key] = record.get(missile_key, 0) + quantity
+    record["missiles"] = record.get("missiles", 0) + quantity
+    save_user_data_store()
+    save_clan_data_store()
+    context.user_data["awaiting_clan_arsenal_withdraw"] = False
+    await update.message.reply_text(
+        f"✅ {quantity} {label} از انبار کلن برداشت شد.",
+        reply_markup=clan_arsenal_menu_markup(True),
+    )
+
+
 async def clan_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.callback_query is None or update.effective_user is None:
         return
@@ -4969,6 +5222,7 @@ async def clan_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             await query.edit_message_text("❌ انتخاب اعضای وار منقضی شده است.")
             return
         members = selection.get("members", [])
+        team_size = selection.get("team_size", CLAN_WAR_TEAM_MAX_SIZE)
         selected = set(selection.get("selected", set()))
         if data.startswith("clan_war_pick_"):
             member_id = int(data.replace("clan_war_pick_", ""))
@@ -4978,24 +5232,24 @@ async def clan_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             if member_id in selected:
                 selected.remove(member_id)
             else:
-                if len(selected) >= CLAN_WAR_TEAM_SIZE:
-                    await query.answer(f"فقط {CLAN_WAR_TEAM_SIZE} نفر را می‌توانید انتخاب کنید.")
+                if len(selected) >= team_size:
+                    await query.answer(f"فقط {team_size} نفر را می‌توانید انتخاب کنید.")
                     return
                 selected.add(member_id)
             selection["selected"] = selected
             context.user_data["clan_war_selection"] = selection
             selection_text = (
                 "✋ انتخاب اعضای کلن وار\n"
-                f"اعضای انتخاب‌شده: {len(selected)}/{CLAN_WAR_TEAM_SIZE}"
+                f"اعضای انتخاب‌شده: {len(selected)}/{team_size}"
             )
             await safe_edit_message(
                 query,
                 selection_text,
-                reply_markup=clan_war_selection_markup(members, selected),
+                reply_markup=clan_war_selection_markup(members, selected, team_size),
             )
             return
-        if len(selected) != CLAN_WAR_TEAM_SIZE:
-            await query.answer(f"باید دقیقاً {CLAN_WAR_TEAM_SIZE} نفر را انتخاب کنید.")
+        if len(selected) != team_size:
+            await query.answer(f"باید دقیقاً {team_size} نفر را انتخاب کنید.")
             return
         members_in_clan = clan.get("members", [])
         if any(member_id not in members_in_clan for member_id in selected):
@@ -5010,6 +5264,7 @@ async def clan_action(update: Update, context: ContextTypes.DEFAULT_TYPE):
             context,
             clan,
             list(selected),
+            team_size,
             query.message,
         )
         context.user_data.pop("clan_war_selection", None)
@@ -5672,6 +5927,8 @@ async def clan_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         is_sub_leader = user_is_sub_leader(record, clan)
         member_count = len(clan.get("members", []))
         capacity = get_clan_capacity(clan.get("level", 1))
+        arsenal_capacity = get_clan_arsenal_capacity(clan.get("level", 1))
+        arsenal_used = get_clan_arsenal_used(clan)
         tank_level = clan.get("tank_level", 0)
         castle_level = clan.get("castle_level", 0)
         sub_leaders = clan.get("sub_leaders", [])
@@ -5682,6 +5939,7 @@ async def clan_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
             f"لول: {clan.get('level', 1)}\n"
             f"اعضا: {member_count}/{capacity}\n"
             f"تگ: {clan.get('tag') or 'ندارد'}\n"
+            f"انبار موشکی: {arsenal_used}/{arsenal_capacity}\n"
             f"تانک کلن: لول {tank_level}\n"
             f"قلعه کلن: لول {castle_level}\n"
             f"ساب‌لیدرها: {', '.join(map(str, sub_leaders)) if sub_leaders else 'ندارد'}\n",
@@ -6079,13 +6337,14 @@ async def start_clan_war_session(
     opponent: dict,
     team_a: list[int],
     team_b: list[int] | None = None,
+    team_size: int = CLAN_WAR_TEAM_MAX_SIZE,
     starts_at: datetime | None = None,
 ) -> tuple[bool, str]:
     opponent_members = opponent.get("members", [])
     if team_b is None:
-        if len(opponent_members) < CLAN_WAR_TEAM_SIZE:
+        if len(opponent_members) < team_size:
             return False, "❌ کلن حریف به حد نصاب نرسیده است."
-        team_b = random.sample(opponent_members, CLAN_WAR_TEAM_SIZE)
+        team_b = random.sample(opponent_members, team_size)
     announce_chats = set()
     for candidate_id in (clan.get("leader_id"), opponent.get("leader_id")):
         if candidate_id:
@@ -6105,6 +6364,7 @@ async def start_clan_war_session(
             str(clan.get("id")): team_a,
             str(opponent.get("id")): team_b,
         },
+        "team_size": team_size,
         "user_clan_map": user_clan_map,
         "damage_totals": {str(clan.get("id")): 0, str(opponent.get("id")): 0},
         "damage_by_user": {},
@@ -6126,6 +6386,7 @@ async def start_clan_war_session(
         "⚔️ کلن وار در حال آماده‌سازی است!\n\n"
         f"کلن شما در برابر {opponent_name}\n"
         f"⏳ شروع تقریباً تا {wait_minutes} دقیقه دیگر ({starts_at_text})\n"
+        f"اعضای انتخاب‌شده: {team_size} نفر\n"
         f"هر نفر {CLAN_WAR_ATTACKS_PER_USER} حمله دارد.\n"
         "با شروع وار از منوی کلن وار حمله کنید."
     )
@@ -6135,6 +6396,7 @@ async def start_clan_war_session(
         "⚔️ کلن وار در حال آماده‌سازی است!\n\n"
         f"کلن شما در برابر {clan.get('name', 'نامشخص')}\n"
         f"⏳ شروع تقریباً تا {wait_minutes} دقیقه دیگر ({starts_at_text})\n"
+        f"اعضای انتخاب‌شده: {team_size} نفر\n"
         f"هر نفر {CLAN_WAR_ATTACKS_PER_USER} حمله دارد.\n"
         "با شروع وار از منوی کلن وار حمله کنید."
     )
@@ -6218,6 +6480,7 @@ async def clan_war_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     war = get_active_clan_war_for_user(update.effective_user.id)
     if war:
         ensure_war_started(war)
+        team_size = war.get("team_size", CLAN_WAR_TEAM_MAX_SIZE)
         starts_at = war.get("starts_at")
         if starts_at:
             try:
@@ -6229,7 +6492,7 @@ async def clan_war_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
                 await update.message.reply_text(
                     "⚔️ کلن وار در صف است.\n"
                     f"⏳ شروع تا حدود {minutes_left} دقیقه دیگر.\n"
-                    f"اعضای انتخاب‌شده شما: {CLAN_WAR_TEAM_SIZE} نفر\n"
+                    f"اعضای انتخاب‌شده شما: {team_size} نفر\n"
                     f"حمله باقی‌مانده شما: {record.get('clan_war_attacks_left', 0)}",
                     reply_markup=clan_war_menu_markup(is_leader or is_sub_leader, True),
                 )
@@ -6276,29 +6539,33 @@ async def clan_war_start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         await update.message.reply_text("❌ فقط لیدر یا ساب‌لیدر می‌تواند کلن وار را شروع کند.")
         return
     members = clan.get("members", [])
-    if len(members) < CLAN_WAR_TEAM_SIZE:
+    if len(members) < CLAN_WAR_TEAM_MIN_SIZE:
         await update.message.reply_text(
-            f"❌ برای شروع کلن وار حداقل {CLAN_WAR_TEAM_SIZE} عضو نیاز دارید."
+            f"❌ برای شروع کلن وار حداقل {CLAN_WAR_TEAM_MIN_SIZE} عضو نیاز دارید."
         )
         return
     if any(get_user_record(int(member_id)).get("clan_war_id") for member_id in members):
         await update.message.reply_text("❌ یکی از اعضای کلن شما در کلن وار فعال است.")
         return
-    if len(members) > CLAN_WAR_TEAM_SIZE:
+    team_size = clan_war_team_size(len(members))
+    if len(members) > team_size:
         context.user_data["clan_war_selection"] = {
             "clan_id": clan.get("id"),
             "members": members,
             "selected": set(),
+            "team_size": team_size,
         }
         await update.message.reply_text(
             "✋ انتخاب اعضای کلن وار\n"
-            f"از بین اعضا {CLAN_WAR_TEAM_SIZE} نفر را انتخاب کنید.\n"
+            f"از بین اعضا {team_size} نفر را انتخاب کنید.\n"
             "روی نام اعضا بزنید و در نهایت شروع وار را بزنید.",
-            reply_markup=clan_war_selection_markup(members, set()),
+            reply_markup=clan_war_selection_markup(members, set(), team_size),
         )
         return
-    team_a = random.sample(members, CLAN_WAR_TEAM_SIZE)
-    result_message = await queue_clan_war_request(context, clan, team_a, update.message)
+    team_a = random.sample(members, team_size)
+    result_message = await queue_clan_war_request(
+        context, clan, team_a, team_size, update.message
+    )
     if result_message:
         await update.message.reply_text(result_message)
 
@@ -6347,6 +6614,7 @@ async def clan_war_attack_prompt(update: Update, context: ContextTypes.DEFAULT_T
     await update.message.reply_text(
         "⚔️ حمله در کلن وار\n"
         "اسم موشک را بنویسید تا حمله انجام شود.\n"
+        "برای استفاده از موشک کلن، بعد از اسم موشک یک نقطه بگذارید (مثال: اطلس.).\n"
         f"{cyber_note}\n\n"
         f"موشک‌های شما:\n{format_owned_missiles(record)}"
     )
@@ -6361,10 +6629,15 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
     if await reject_if_banned(update, context):
         context.user_data["awaiting_clan_war_attack"] = False
         return
-    missile_name = (update.message.text or "").strip()
-    if not missile_name:
+    missile_input = (update.message.text or "").strip()
+    if not missile_input:
         await update.message.reply_text("❌ اسم موشک را وارد کنید.")
         return
+    use_clan_arsenal = False
+    if missile_input.endswith(".") or missile_input.endswith("•"):
+        use_clan_arsenal = True
+        missile_input = missile_input.rstrip(".• ").strip()
+    missile_name = missile_input
     war = get_active_clan_war_for_user(update.effective_user.id)
     if not war:
         context.user_data["awaiting_clan_war_attack"] = False
@@ -6404,12 +6677,29 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
     if missile_key is None:
         await update.message.reply_text("❌ موشک مورد نظر یافت نشد.")
         return
-    if record.get(missile_key, 0) <= 0:
-        await update.message.reply_text("❌ از این موشک موجودی ندارید.")
-        return
-    record[missile_key] -= 1
-    if record.get("missiles", 0) > 0:
-        record["missiles"] -= 1
+    clan = get_clan_for_user(record)
+    if use_clan_arsenal:
+        if not clan:
+            await update.message.reply_text("❌ شما عضو کلن نیستید.")
+            return
+        if missile_key not in CLAN_ARSENAL_WEIGHTS:
+            await update.message.reply_text("❌ این موشک در انبار کلن پشتیبانی نمی‌شود.")
+            return
+        arsenal = get_clan_arsenal(clan)
+        if arsenal.get(missile_key, 0) <= 0:
+            await update.message.reply_text("❌ موشک کلن کافی نیست.")
+            return
+        arsenal[missile_key] -= 1
+        if arsenal.get(missile_key, 0) <= 0:
+            arsenal.pop(missile_key, None)
+        save_clan_data_store()
+    else:
+        if record.get(missile_key, 0) <= 0:
+            await update.message.reply_text("❌ از این موشک موجودی ندارید.")
+            return
+        record[missile_key] -= 1
+        if record.get("missiles", 0) > 0:
+            record["missiles"] -= 1
     damage = missile_damage(missile_name, missile_key) + clan_tank_bonus(record)
     clan_id = war.get("user_clan_map", {}).get(record.get("id"))
     if clan_id is None:
@@ -8600,6 +8890,9 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^کلن وار ⚔️$"), clan_war_menu))
     app.add_handler(MessageHandler(filters.Regex("^شروع کلن وار ⚔️$"), clan_war_start))
     app.add_handler(MessageHandler(filters.Regex("^حمله در وار ⚔️$"), clan_war_attack_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^انبار موشکی کلن 🚀$"), clan_arsenal_menu))
+    app.add_handler(MessageHandler(filters.Regex("^واریز موشک کلن 🚀$"), clan_arsenal_deposit_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^برداشت موشک کلن 🎯$"), clan_arsenal_withdraw_prompt))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی کلن ↩️$"), clan_menu))
     app.add_handler(MessageHandler(filters.Regex("^حذف عضو ➖$"), clan_remove_member_prompt))
     app.add_handler(MessageHandler(filters.Regex("^افکت های حمله ✨$"), customization_placeholder))
