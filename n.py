@@ -1683,6 +1683,13 @@ def normalize_gift_code(code: str) -> str:
     return re.sub(r"\s+", "", code).upper()
 
 
+async def send_missile_sticker(context: ContextTypes.DEFAULT_TYPE, chat_id: int) -> None:
+    try:
+        await context.bot.send_message(chat_id=chat_id, text="🚀💥")
+    except Exception:
+        return
+
+
 async def send_menu_transition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
     if update.effective_chat is None:
         return
@@ -3808,6 +3815,8 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
         f"{cyber_note}\n\n"
         f"موشک‌های شما:\n{format_owned_missiles(record)}"
     )
+    if update.effective_chat is not None:
+        await send_missile_sticker(context, update.effective_chat.id)
 
 
 async def handle_global_attack_missile(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3933,6 +3942,7 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         text=report,
         reply_markup=revenge_inline_markup(update.effective_user.id),
     )
+    await send_missile_sticker(context, opponent_id)
     attack_report = format_attack_report(
         attacker=record,
         defender=opponent_record,
@@ -3949,6 +3959,7 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         attack_report,
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
     )
+    await send_missile_sticker(context, update.effective_chat.id)
 
 
 async def finish_duel_by_key(bot: Bot, key: str | None) -> None:
@@ -4296,6 +4307,7 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         defense_note=defense_note,
     )
     await update.message.reply_text(report)
+    await send_missile_sticker(context, update.effective_chat.id)
     defense_report = format_defense_report(
         attacker=attacker_record,
         defender=defender_record,
@@ -4312,6 +4324,7 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         defense_report,
         reply_markup=revenge_inline_markup(update.effective_user.id),
     )
+    await send_missile_sticker(context, target_user.id)
 
 
 async def shop_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -5613,6 +5626,7 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         defense_report,
         reply_markup=revenge_inline_markup(record.get("id", update.effective_user.id)),
     )
+    await send_missile_sticker(context, int(target_id))
     await update.message.reply_text(
         "✅ انتقام ثبت شد!\n"
         f"🧨 موشک: {missile_name}\n"
@@ -5620,6 +5634,7 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
         f"🏆 رنک اضافه شده: {rank_gain}",
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
     )
+    await send_missile_sticker(context, update.effective_chat.id)
 
 
 async def missiles_placeholder(update: Update, context: ContextTypes.DEFAULT_TYPE):
