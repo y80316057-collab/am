@@ -15,6 +15,7 @@ import requests
 from flask import Flask, jsonify, request
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, Update
+from telegram.constants import ChatAction
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -1682,6 +1683,16 @@ def normalize_gift_code(code: str) -> str:
     return re.sub(r"\s+", "", code).upper()
 
 
+async def send_menu_transition(update: Update, context: ContextTypes.DEFAULT_TYPE) -> None:
+    if update.effective_chat is None:
+        return
+    await context.bot.send_chat_action(
+        chat_id=update.effective_chat.id,
+        action=ChatAction.TYPING,
+    )
+    await asyncio.sleep(0.6)
+
+
 async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
     if update.message is None:
         return
@@ -1735,6 +1746,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         record["first_start_completed"] = True
         save_user_data_store()
     reply_markup = main_menu_markup(update.effective_user.id if update.effective_user else None)
+    await send_menu_transition(update, context)
     await update.message.reply_text(
         "سلام! خوش اومدی 👋\n"
         "برای تست بگو /start رو زدی و بات آماده‌ست.",
@@ -1771,11 +1783,11 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         ["حمله جهانی 🌐"],
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
-        ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
-        ["معدن جم 💎", "تبادل سکه 💵", "کلن 👥"],
-        ["راهنما ❓", "پشتیبانی 📞", "خرید آیتم 💳"],
-        ["بانک 🏦"],
+        ["گردونه 🎡", "جایزه 🎁", "معدن طلا ⛏️"],
+        ["معدن جم 💎", "تبادل 💵", "کلن 👥"],
+        ["راهنما ❓", "پشتیبانی 📞", "آیتم 💳"],
         ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
+        ["بانک 🏦"],
     ]
     if user_id is not None and is_admin(user_id):
         keyboard.append(["پنل ادمین 🛠️"])
@@ -2194,7 +2206,7 @@ def help_menu_text() -> str:
         "- 🏆 رنکینگ: جایگاه شما و دیگران در لیست جهانی.\n"
         "- 🛡️ پدافند: مدیریت و انتخاب پدافند فعال.\n"
         "- 🌐 حمله جهانی: جستجوی حریف تصادفی و حمله.\n"
-        "- 🎁 جایزه روزانه: دریافت جوایز روزانه.\n"
+        "- 🎁 جایزه: دریافت جوایز روزانه.\n"
         "- ⛏️ معدن طلا: تولید خودکار سکه.\n"
         "- 👥 کلن: ایجاد یا پیوستن به کلن برای رقابت گروهی.\n"
         "- ⚔️ کلن وار: رقابت ۱۰ در ۱۰ بین کلن‌ها.\n\n"
@@ -2396,6 +2408,7 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_nuclear_quantity"] = False
     context.user_data["awaiting_bank_deposit"] = False
     context.user_data["awaiting_bank_withdraw"] = False
+    await send_menu_transition(update, context)
     await update.message.reply_text(
         "بازگشت به منوی اصلی 👇",
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
@@ -8504,12 +8517,12 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^بازگشت ↩️$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.Regex("^دارایی 📦$"), assets_menu))
     app.add_handler(MessageHandler(filters.Regex("^فروشگاه 🛒$"), store_menu))
-    app.add_handler(MessageHandler(filters.Regex("^خرید آیتم 💳$"), shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^(خرید آیتم|آیتم) 💳$"), shop_menu))
     app.add_handler(MessageHandler(filters.Regex("^بانک 🏦$"), bank_menu))
     app.add_handler(MessageHandler(filters.Regex("^واریز به بانک 💳$"), bank_deposit_prompt))
     app.add_handler(MessageHandler(filters.Regex("^برداشت از بانک 💵$"), bank_withdraw_prompt))
     app.add_handler(MessageHandler(filters.Regex("^ارتقا بانک ⬆️$"), bank_upgrade))
-    app.add_handler(MessageHandler(filters.Regex("^تبادل سکه (💵|💸)$"), coin_transfer_menu))
+    app.add_handler(MessageHandler(filters.Regex("^تبادل( سکه)? (💵|💸)$"), coin_transfer_menu))
     app.add_handler(MessageHandler(filters.Regex("^کلن 👥$"), clan_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن طلا ⛏️$"), gold_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن جم 💎$"), gem_mine_menu))
@@ -8552,7 +8565,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^هسته‌ای 💰"), nuclear_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^خروج از خرید ◀️$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی فروشگاه ↩️$"), back_to_shop))
-    app.add_handler(MessageHandler(filters.Regex("^جایزه روزانه 🎁$"), daily_reward))
+    app.add_handler(MessageHandler(filters.Regex("^(جایزه روزانه|جایزه) 🎁$"), daily_reward))
     app.add_handler(MessageHandler(filters.Regex("^رنکینگ 🏆$"), ranking_menu))
     app.add_handler(CommandHandler("rank_info", rank_info))
     app.add_handler(MessageHandler(filters.Regex("^جمع‌آوری سکه 💰$"), gold_mine_collect))
