@@ -3835,10 +3835,6 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         context.user_data["awaiting_global_attack_missile"] = False
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
         return
-    if is_bank_protected(opponent_record):
-        context.user_data["awaiting_global_attack_missile"] = False
-        await update.message.reply_text(bank_protection_message())
-        return
     if user_in_active_duel(record.get("id")) or user_in_active_duel(int(opponent_id)):
         context.user_data["awaiting_global_attack_missile"] = False
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است.")
@@ -4184,9 +4180,6 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
         return
     if is_admin_protection_enabled(target_record):
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
-        return
-    if is_bank_protected(target_record):
-        await update.message.reply_text(bank_protection_message())
         return
     if not is_duel_attack_allowed(update.effective_chat.id, update.effective_user.id, target_user.id):
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است و نمی‌توانید حمله کنید.")
@@ -5507,9 +5500,6 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
     target_record = get_user_record(int(target_id))
     if is_admin_protection_enabled(target_record):
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
-        return
-    if is_bank_protected(target_record):
-        await update.message.reply_text(bank_protection_message())
         return
     record = get_user_record(update.effective_user.id)
     if is_cyber_blocked_for_missile(record, missile_name):
