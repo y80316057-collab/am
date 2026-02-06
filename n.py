@@ -103,6 +103,20 @@ DEFENSE_ITEMS = [
 CYBER_ATTACK_COST = 1000
 CYBER_ATTACK_SUCCESS_RATE = 30
 CYBER_ATTACK_BLOCK_MINUTES = 5
+CYBER_BLOCK_EXEMPT_MISSILE_KEYS = {"nuclear_missiles", "falcon_missiles"}
+BANK_LEVEL_LIMITS = {
+    1: 10000,
+    2: 20000,
+    3: 35000,
+    4: 50000,
+    5: 100000,
+}
+BANK_UPGRADE_COSTS = {
+    2: 5000,
+    3: 10000,
+    4: 20000,
+    5: 35000,
+}
 CYBER_DEFENSE_ITEMS = [
     {"key": "cyber_defense_2", "label": "پارادوکس", "price": 1000, "reduction": 12},
     {"key": "cyber_defense_3", "label": "انتی ویروس", "price": 2000, "reduction": 20},
@@ -489,6 +503,8 @@ def get_user_record(user_id: int) -> dict:
             "gem_mine_last_collect": None,
             "daily_boxes_opened": 0,
             "last_box_open_date": None,
+            "bank_level": 1,
+            "bank_balance": 0,
             "available_titles": [],
             "selected_title": None,
             "inviter_id": None,
@@ -576,6 +592,8 @@ def get_user_record(user_id: int) -> dict:
         "gem_mine_last_collect": None,
         "daily_boxes_opened": 0,
         "last_box_open_date": None,
+        "bank_level": 1,
+        "bank_balance": 0,
         "available_titles": [],
         "selected_title": None,
         "inviter_id": None,
@@ -972,6 +990,8 @@ def reset_purchase_flags(context: ContextTypes.DEFAULT_TYPE) -> None:
     context.user_data["awaiting_chemical_quantity"] = False
     context.user_data["awaiting_nuclear_quantity"] = False
     context.user_data["awaiting_topup_receipt"] = False
+    context.user_data["awaiting_bank_deposit"] = False
+    context.user_data["awaiting_bank_withdraw"] = False
 
 
 def reset_clan_prompt_flags(context: ContextTypes.DEFAULT_TYPE) -> None:
@@ -1556,6 +1576,49 @@ def is_cyber_blocked(record: dict) -> bool:
     return cyber_block_remaining(record) is not None
 
 
+def cyber_block_denied_message(record: dict) -> str:
+    remaining = cyber_block_remaining_text(record)
+    note = f" تا {remaining}" if remaining else ""
+    return f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید."
+
+
+def cyber_block_limited_message(record: dict) -> str:
+    remaining = cyber_block_remaining_text(record)
+    note = f" تا {remaining}" if remaining else ""
+    return f"❌ شما هک شده‌اید و{note} فقط موشک‌های هسته‌ای یا فالکون قابل استفاده‌اند."
+
+
+def is_cyber_block_exempt_missile(missile_name: str) -> bool:
+    missile_key = find_missile_key(missile_name)
+    return missile_key in CYBER_BLOCK_EXEMPT_MISSILE_KEYS
+
+
+def has_cyber_block_exempt_missiles(record: dict) -> bool:
+    return any(record.get(key, 0) > 0 for key in CYBER_BLOCK_EXEMPT_MISSILE_KEYS)
+
+
+def is_cyber_blocked_for_missile(record: dict, missile_name: str) -> bool:
+    return is_cyber_blocked(record) and not is_cyber_block_exempt_missile(missile_name)
+
+
+def bank_capacity(level: int) -> int:
+    if level <= 0:
+        return BANK_LEVEL_LIMITS[1]
+    return BANK_LEVEL_LIMITS.get(level, BANK_LEVEL_LIMITS[max(BANK_LEVEL_LIMITS)])
+
+
+def bank_upgrade_cost(level: int) -> int | None:
+    return BANK_UPGRADE_COSTS.get(level + 1)
+
+
+def is_bank_protected(record: dict) -> bool:
+    return record.get("bank_balance", 0) > 0
+
+
+def bank_protection_message() -> str:
+    return "❌ این بازیکن پول داخل بانک دارد و قابل حمله نیست."
+
+
 def apply_cyber_block(defender: dict) -> None:
     until = datetime.now() + timedelta(minutes=CYBER_ATTACK_BLOCK_MINUTES)
     defender["cyber_block_until"] = until.isoformat()
@@ -1711,6 +1774,7 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
         ["گردونه 🎡", "جایزه روزانه 🎁", "معدن طلا ⛏️"],
         ["معدن جم 💎", "تبادل سکه 💵", "کلن 👥"],
         ["راهنما ❓", "پشتیبانی 📞", "خرید آیتم 💳"],
+        ["بانک 🏦"],
         ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
     ]
     if user_id is not None and is_admin(user_id):
@@ -2330,9 +2394,165 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     context.user_data["awaiting_clan_tag"] = False
     context.user_data["awaiting_clan_remove_member"] = False
     context.user_data["awaiting_nuclear_quantity"] = False
+    context.user_data["awaiting_bank_deposit"] = False
+    context.user_data["awaiting_bank_withdraw"] = False
     await update.message.reply_text(
         "بازگشت به منوی اصلی 👇",
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
+    )
+
+
+def bank_menu_markup() -> ReplyKeyboardMarkup:
+    keyboard = [
+        ["واریز به بانک 💳", "برداشت از بانک 💵"],
+        ["ارتقا بانک ⬆️"],
+        ["بازگشت به منوی اصلی ↩️"],
+    ]
+    return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+async def bank_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    reset_purchase_flags(context)
+    record = get_user_record(update.effective_user.id)
+    bank_level = record.get("bank_level", 1)
+    bank_balance = record.get("bank_balance", 0)
+    bank_limit = bank_capacity(bank_level)
+    upgrade_cost = bank_upgrade_cost(bank_level)
+    upgrade_text = "حداکثر لول فعال است." if upgrade_cost is None else f"هزینه ارتقا: {upgrade_cost} سکه"
+    await update.message.reply_text(
+        "🏦 بانک\n\n"
+        f"سطح بانک: {bank_level}\n"
+        f"ظرفیت: {bank_limit}\n"
+        f"موجودی بانک: {bank_balance}\n"
+        f"سکه‌های شما: {record.get('coins', 0)}\n\n"
+        f"{upgrade_text}",
+        reply_markup=bank_menu_markup(),
+    )
+
+
+async def bank_deposit_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    context.user_data["awaiting_bank_deposit"] = True
+    context.user_data["awaiting_bank_withdraw"] = False
+    await update.message.reply_text(
+        "💳 مقدار واریز را ارسال کنید.\n"
+        f"سکه‌های شما: {record.get('coins', 0)}",
+        reply_markup=bank_menu_markup(),
+    )
+
+
+async def bank_withdraw_prompt(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    context.user_data["awaiting_bank_withdraw"] = True
+    context.user_data["awaiting_bank_deposit"] = False
+    await update.message.reply_text(
+        "💵 مقدار برداشت را ارسال کنید.\n"
+        f"موجودی بانک: {record.get('bank_balance', 0)}",
+        reply_markup=bank_menu_markup(),
+    )
+
+
+async def handle_bank_deposit(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    record = get_user_record(update.effective_user.id)
+    amount_text = (update.message.text or "").strip().replace(",", "")
+    if not amount_text.isdigit():
+        await update.message.reply_text("❌ مقدار واریز باید عددی باشد.")
+        return
+    amount = int(amount_text)
+    if amount <= 0:
+        await update.message.reply_text("❌ مقدار واریز باید بیشتر از صفر باشد.")
+        return
+    if record.get("coins", 0) < amount:
+        await update.message.reply_text("❌ سکه کافی ندارید.")
+        return
+    bank_level = record.get("bank_level", 1)
+    bank_limit = bank_capacity(bank_level)
+    current_balance = record.get("bank_balance", 0)
+    if current_balance + amount > bank_limit:
+        await update.message.reply_text(
+            f"❌ ظرفیت بانک پر می‌شود. سقف این لول: {bank_limit}"
+        )
+        return
+    record["coins"] -= amount
+    record["bank_balance"] = current_balance + amount
+    save_user_data_store()
+    context.user_data["awaiting_bank_deposit"] = False
+    await update.message.reply_text(
+        f"✅ {amount} سکه به بانک واریز شد.\n"
+        f"موجودی بانک: {record['bank_balance']}",
+        reply_markup=bank_menu_markup(),
+    )
+
+
+async def handle_bank_withdraw(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    record = get_user_record(update.effective_user.id)
+    amount_text = (update.message.text or "").strip().replace(",", "")
+    if not amount_text.isdigit():
+        await update.message.reply_text("❌ مقدار برداشت باید عددی باشد.")
+        return
+    amount = int(amount_text)
+    if amount <= 0:
+        await update.message.reply_text("❌ مقدار برداشت باید بیشتر از صفر باشد.")
+        return
+    if record.get("bank_balance", 0) < amount:
+        await update.message.reply_text("❌ موجودی بانک کافی نیست.")
+        return
+    record["bank_balance"] -= amount
+    record["coins"] = record.get("coins", 0) + amount
+    save_user_data_store()
+    context.user_data["awaiting_bank_withdraw"] = False
+    await update.message.reply_text(
+        f"✅ {amount} سکه از بانک برداشت شد.\n"
+        f"موجودی بانک: {record['bank_balance']}",
+        reply_markup=bank_menu_markup(),
+    )
+
+
+async def bank_upgrade(update: Update, context: ContextTypes.DEFAULT_TYPE):
+    if update.message is None or update.effective_user is None:
+        return
+    if await reject_if_banned(update, context):
+        return
+    if await reject_if_not_private(update):
+        return
+    record = get_user_record(update.effective_user.id)
+    current_level = record.get("bank_level", 1)
+    upgrade_cost = bank_upgrade_cost(current_level)
+    if upgrade_cost is None:
+        await update.message.reply_text("✅ بانک شما در بالاترین لول است.")
+        return
+    if record.get("coins", 0) < upgrade_cost:
+        await update.message.reply_text("❌ سکه کافی برای ارتقا ندارید.")
+        return
+    record["coins"] -= upgrade_cost
+    record["bank_level"] = current_level + 1
+    save_user_data_store()
+    await update.message.reply_text(
+        f"✅ بانک به لول {record['bank_level']} ارتقا یافت.\n"
+        f"ظرفیت جدید: {bank_capacity(record['bank_level'])}",
+        reply_markup=bank_menu_markup(),
     )
 
 
@@ -2352,6 +2572,9 @@ async def assets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     missiles_lines = format_owned_missiles(record)
     defenses_lines = format_owned_defenses(record)
     display_name = display_name_with_sticker(record, user.first_name or "کاربر")
+    bank_level = record.get("bank_level", 1)
+    bank_balance = record.get("bank_balance", 0)
+    bank_limit = bank_capacity(bank_level)
     await update.message.reply_text(
         "🧨👤 کاربر: "
         f"{display_name}\n"
@@ -2365,6 +2588,7 @@ async def assets_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         f"🏵 بالاترین رنک: {record['highest_rank']}\n"
         f"💎 جم: {record['gems']}\n"
         f"🏅 لیگ: {record['league']}\n\n"
+        f"🏦 بانک: لول {bank_level} | موجودی {bank_balance}/{bank_limit}\n"
         f"🛡️ سپر فعال: {shield_status}\n\n"
         "📦 دارایی:\n"
         f"{missiles_lines}\n"
@@ -2829,6 +3053,12 @@ async def handle_text_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if context.user_data.get("awaiting_cyber_defense_quantity"):
         await handle_cyber_defense_quantity(update, context)
+        return
+    if context.user_data.get("awaiting_bank_deposit"):
+        await handle_bank_deposit(update, context)
+        return
+    if context.user_data.get("awaiting_bank_withdraw"):
+        await handle_bank_withdraw(update, context)
         return
     if context.user_data.get("awaiting_chemical_quantity"):
         await handle_chemical_quantity(update, context)
@@ -3468,10 +3698,8 @@ async def global_attack_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     if await reject_if_not_private(update):
         return
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    if is_cyber_blocked(record) and not has_cyber_block_exempt_missiles(record):
+        await update.message.reply_text(cyber_block_denied_message(record))
         return
     update_league(record)
     now = datetime.now()
@@ -3513,10 +3741,9 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
     query = update.callback_query
     await query.answer()
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
-        await query.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    cyber_blocked = is_cyber_blocked(record)
+    if cyber_blocked and not has_cyber_block_exempt_missiles(record):
+        await query.message.reply_text(cyber_block_denied_message(record))
         return
     update_league(record)
     if query.data == "global_attack_reroll":
@@ -3557,9 +3784,15 @@ async def global_attack_action(update: Update, context: ContextTypes.DEFAULT_TYP
     context.user_data["awaiting_atlas_quantity"] = False
     context.user_data["awaiting_revenge_attack"] = False
     context.user_data["awaiting_global_attack_missile"] = True
+    cyber_note = (
+        "\n⚠️ در زمان هک فقط موشک‌های هسته‌ای یا فالکون قابل استفاده‌اند."
+        if cyber_blocked
+        else ""
+    )
     await query.edit_message_text(
         "⚔️ حمله جهانی\n"
-        "اسم موشک را بنویسید تا حمله انجام شود.\n\n"
+        "اسم موشک را بنویسید تا حمله انجام شود.\n"
+        f"{cyber_note}\n\n"
         f"موشک‌های شما:\n{format_owned_missiles(record)}"
     )
 
@@ -3574,11 +3807,9 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
         await update.message.reply_text("❌ اسم موشک را وارد کنید.")
         return
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
+    if is_cyber_blocked_for_missile(record, missile_name):
         context.user_data["awaiting_global_attack_missile"] = False
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        await update.message.reply_text(cyber_block_limited_message(record))
         return
     opponent = context.user_data.get("current_opponent")
     opponent_id = opponent.get("id") if isinstance(opponent, dict) else None
@@ -3590,6 +3821,10 @@ async def handle_global_attack_missile(update: Update, context: ContextTypes.DEF
     if is_admin_protection_enabled(opponent_record):
         context.user_data["awaiting_global_attack_missile"] = False
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
+        return
+    if is_bank_protected(opponent_record):
+        context.user_data["awaiting_global_attack_missile"] = False
+        await update.message.reply_text(bank_protection_message())
         return
     if user_in_active_duel(record.get("id")) or user_in_active_duel(int(opponent_id)):
         context.user_data["awaiting_global_attack_missile"] = False
@@ -3937,14 +4172,15 @@ async def group_attack_by_reply(update: Update, context: ContextTypes.DEFAULT_TY
     if is_admin_protection_enabled(target_record):
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
         return
+    if is_bank_protected(target_record):
+        await update.message.reply_text(bank_protection_message())
+        return
     if not is_duel_attack_allowed(update.effective_chat.id, update.effective_user.id, target_user.id):
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است و نمی‌توانید حمله کنید.")
         return
     attacker_record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(attacker_record):
-        remaining = cyber_block_remaining_text(attacker_record)
-        note = f" تا {remaining}" if remaining else ""
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    if is_cyber_blocked_for_missile(attacker_record, missile_name):
+        await update.message.reply_text(cyber_block_limited_message(attacker_record))
         return
     update_league(attacker_record)
     update_league(target_record)
@@ -5207,10 +5443,8 @@ async def revenge_attack_action(update: Update, context: ContextTypes.DEFAULT_TY
     query = update.callback_query
     await query.answer()
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
-        await query.edit_message_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    if is_cyber_blocked(record) and not has_cyber_block_exempt_missiles(record):
+        await query.edit_message_text(cyber_block_denied_message(record))
         return
     data = query.data or ""
     try:
@@ -5226,9 +5460,15 @@ async def revenge_attack_action(update: Update, context: ContextTypes.DEFAULT_TY
     save_user_data_store()
     context.user_data["awaiting_revenge_attack"] = True
     context.user_data["revenge_target_id"] = int(attacker_id)
+    cyber_note = (
+        "\n⚠️ در زمان هک فقط موشک‌های هسته‌ای یا فالکون قابل استفاده‌اند."
+        if is_cyber_blocked(record)
+        else ""
+    )
     await query.edit_message_text(
         "⚔️ انتقام\n"
         "اسم موشک را بنویسید تا حمله شود."
+        f"{cyber_note}"
     )
 
 
@@ -5255,11 +5495,12 @@ async def handle_revenge_attack(update: Update, context: ContextTypes.DEFAULT_TY
     if is_admin_protection_enabled(target_record):
         await update.message.reply_text("❌ نمی‌توانید به این ادمین محافظت‌شده حمله کنید.")
         return
+    if is_bank_protected(target_record):
+        await update.message.reply_text(bank_protection_message())
+        return
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    if is_cyber_blocked_for_missile(record, missile_name):
+        await update.message.reply_text(cyber_block_limited_message(record))
         return
     if user_in_active_duel(record.get("id")) or user_in_active_duel(int(target_id)):
         await update.message.reply_text("⛔️ یکی از شما در دوئل فعال است.")
@@ -6071,19 +6312,24 @@ async def clan_war_attack_prompt(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⏰ زمان کلن وار تمام شد و نتیجه محاسبه شد.")
         return
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+    cyber_blocked = is_cyber_blocked(record)
+    if cyber_blocked and not has_cyber_block_exempt_missiles(record):
+        await update.message.reply_text(cyber_block_denied_message(record))
         return
     attacks_left = record.get("clan_war_attacks_left", 0)
     if attacks_left <= 0:
         await update.message.reply_text("❌ حمله‌های شما در کلن وار تمام شده است.")
         return
+    cyber_note = (
+        "\n⚠️ در زمان هک فقط موشک‌های هسته‌ای یا فالکون قابل استفاده‌اند."
+        if cyber_blocked
+        else ""
+    )
     context.user_data["awaiting_clan_war_attack"] = True
     await update.message.reply_text(
         "⚔️ حمله در کلن وار\n"
-        "اسم موشک را بنویسید تا حمله انجام شود.\n\n"
+        "اسم موشک را بنویسید تا حمله انجام شود.\n"
+        f"{cyber_note}\n\n"
         f"موشک‌های شما:\n{format_owned_missiles(record)}"
     )
 
@@ -6123,11 +6369,9 @@ async def handle_clan_war_attack(update: Update, context: ContextTypes.DEFAULT_T
         await update.message.reply_text("⏰ زمان کلن وار تمام شد و نتیجه محاسبه شد.")
         return
     record = get_user_record(update.effective_user.id)
-    if is_cyber_blocked(record):
-        remaining = cyber_block_remaining_text(record)
-        note = f" تا {remaining}" if remaining else ""
+    if is_cyber_blocked_for_missile(record, missile_name):
         context.user_data["awaiting_clan_war_attack"] = False
-        await update.message.reply_text(f"❌ شما هک شده‌اید و{note} نمی‌توانید حمله کنید.")
+        await update.message.reply_text(cyber_block_limited_message(record))
         return
     attacks_left = record.get("clan_war_attacks_left", 0)
     if attacks_left <= 0:
@@ -8261,6 +8505,10 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^دارایی 📦$"), assets_menu))
     app.add_handler(MessageHandler(filters.Regex("^فروشگاه 🛒$"), store_menu))
     app.add_handler(MessageHandler(filters.Regex("^خرید آیتم 💳$"), shop_menu))
+    app.add_handler(MessageHandler(filters.Regex("^بانک 🏦$"), bank_menu))
+    app.add_handler(MessageHandler(filters.Regex("^واریز به بانک 💳$"), bank_deposit_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^برداشت از بانک 💵$"), bank_withdraw_prompt))
+    app.add_handler(MessageHandler(filters.Regex("^ارتقا بانک ⬆️$"), bank_upgrade))
     app.add_handler(MessageHandler(filters.Regex("^تبادل سکه (💵|💸)$"), coin_transfer_menu))
     app.add_handler(MessageHandler(filters.Regex("^کلن 👥$"), clan_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن طلا ⛏️$"), gold_mine_menu))
