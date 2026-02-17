@@ -1824,6 +1824,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "برای تست بگو /start رو زدی و بات آماده‌ست.",
         reply_markup=reply_markup,
     )
+    await send_main_menu_premium_legend(update)
 
 
 def build_invite_link(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
@@ -1855,15 +1856,41 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         ["حمله جهانی 🌐"],
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
-        ["گردونه 👑", "جایزه 🎁", "معدن طلا 🪙"],
+        ["گردونه", "جایزه", "معدن طلا"],
         ["معدن جم 💎", "تبادل 💵", "کلن 👥"],
         ["راهنما ❓", "پشتیبانی 📞", "آیتم 💳"],
-        ["سولارپس 🌟", "شخصی سازی 🎨", "پدافند ها 🛡️"],
+        ["سولارپس", "شخصی سازی 🎨", "پدافند ها 🛡️"],
         ["بانک 🏦"],
     ]
     if user_id is not None and is_admin(user_id):
         keyboard.append(["پنل ادمین 🛠️"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def main_menu_premium_legend_text() -> str:
+    return (
+        "![👑](tg://emoji?id=5156877291397055163) گردونه\n"
+        "![🎁](tg://emoji?id=5215440433198413312) جایزه\n"
+        "![🪙](tg://emoji?id=5271655928695892247) معدن طلا\n"
+        "![🌟](tg://emoji?id=5064709487953183440) سولارپس"
+    )
+
+
+async def send_main_menu_premium_legend(update: Update) -> None:
+    if update.message is None:
+        return
+    try:
+        await update.message.reply_text(
+            main_menu_premium_legend_text(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            "گردونه\n"
+            "جایزه\n"
+            "معدن طلا\n"
+            "سولارپس"
+        )
 
 
 def starpass_menu_markup() -> ReplyKeyboardMarkup:
@@ -2524,6 +2551,7 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "بازگشت به منوی اصلی 👇",
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
     )
+    await send_main_menu_premium_legend(update)
     try:
         await update.message.reply_text(
             "![🏡](tg://emoji?id=5334953554681556547)",
