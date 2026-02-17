@@ -1855,10 +1855,10 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         ["حمله جهانی 🌐"],
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
-        ["گردونه 🎡", "جایزه 🎁", "معدن طلا ⛏️"],
+        ["گردونه 👑", "جایزه 🎁", "معدن طلا 🪙"],
         ["معدن جم 💎", "تبادل 💵", "کلن 👥"],
         ["راهنما ❓", "پشتیبانی 📞", "آیتم 💳"],
-        ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
+        ["سولارپس 🌟", "شخصی سازی 🎨", "پدافند ها 🛡️"],
         ["بانک 🏦"],
     ]
     if user_id is not None and is_admin(user_id):
@@ -8898,7 +8898,7 @@ def main():
     app.add_handler(
         CallbackQueryHandler(starpass_purchase_confirm, pattern="^starpass_purchase_")
     )
-    app.add_handler(MessageHandler(filters.Regex("^گردونه 🎡$"), wheel_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^گردونه( 🎡| 👑)?$"), wheel_menu))
     app.add_handler(MessageHandler(filters.Regex("^فالکون 🦅$"), wheel_choice))
     app.add_handler(MessageHandler(filters.Regex("^حمله جهانی 🌐$"), global_attack_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی اصلی ↩️$"), back_to_main_menu))
@@ -8912,7 +8912,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^ارتقا بانک ⬆️$"), bank_upgrade))
     app.add_handler(MessageHandler(filters.Regex("^تبادل( سکه)? (💵|💸)$"), coin_transfer_menu))
     app.add_handler(MessageHandler(filters.Regex("^کلن 👥$"), clan_menu))
-    app.add_handler(MessageHandler(filters.Regex("^معدن طلا ⛏️$"), gold_mine_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^معدن طلا( ⛏️| 🪙)?$"), gold_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن جم 💎$"), gem_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^افزایش موجودی 🔁$"), topup_menu))
     app.add_handler(MessageHandler(filters.Regex("^ارسال رسید 🧾$"), topup_receipt_menu))
@@ -8953,14 +8953,14 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^هسته‌ای 💰"), nuclear_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^خروج از خرید ◀️$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی فروشگاه ↩️$"), back_to_shop))
-    app.add_handler(MessageHandler(filters.Regex("^(جایزه روزانه|جایزه) 🎁$"), daily_reward))
+    app.add_handler(MessageHandler(filters.Regex(r"^(جایزه روزانه|جایزه)( 🎁)?$"), daily_reward))
     app.add_handler(MessageHandler(filters.Regex("^رنکینگ 🏆$"), ranking_menu))
     app.add_handler(CommandHandler("rank_info", rank_info))
     app.add_handler(MessageHandler(filters.Regex("^جمع‌آوری سکه 💰$"), gold_mine_collect))
     app.add_handler(MessageHandler(filters.Regex("^جمع‌آوری جم 💎$"), gem_mine_collect))
     app.add_handler(MessageHandler(filters.Regex("^ارتقای معدن ⛏️$"), gold_mine_upgrade))
     app.add_handler(MessageHandler(filters.Regex("^پشتیبانی 📞$"), support_menu))
-    app.add_handler(MessageHandler(filters.Regex("^سولارپس ⭐$"), starpass_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^سولارپس( ⭐| 🌟)?$"), starpass_menu))
     app.add_handler(MessageHandler(filters.Regex("^خرید سولارپس 🛒$"), starpass_purchase))
     app.add_handler(MessageHandler(filters.Regex("^دریافت جوایز 🎁$"), starpass_rewards))
     app.add_handler(MessageHandler(filters.Regex("^شخصی سازی 🎨$"), customization_menu))
