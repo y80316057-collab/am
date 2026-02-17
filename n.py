@@ -15,7 +15,8 @@ import requests
 from flask import Flask, jsonify, request
 
 from telegram import Bot, InlineKeyboardButton, InlineKeyboardMarkup, Message, ReplyKeyboardMarkup, Update
-from telegram.constants import ChatAction
+from telegram.constants import ChatAction, ParseMode
+from telegram.error import BadRequest
 from telegram.ext import (
     ApplicationBuilder,
     CallbackQueryHandler,
@@ -1823,6 +1824,7 @@ async def start(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "برای تست بگو /start رو زدی و بات آماده‌ست.",
         reply_markup=reply_markup,
     )
+    await send_main_menu_premium_legend(update)
 
 
 def build_invite_link(context: ContextTypes.DEFAULT_TYPE, user_id: int) -> str:
@@ -1854,15 +1856,41 @@ def main_menu_markup(user_id: int | None = None) -> ReplyKeyboardMarkup:
     keyboard = [
         ["حمله جهانی 🌐"],
         ["رنکینگ 🏆", "دارایی 📦", "فروشگاه 🛒"],
-        ["گردونه 🎡", "جایزه 🎁", "معدن طلا ⛏️"],
+        ["گردونه", "جایزه", "معدن طلا"],
         ["معدن جم 💎", "تبادل 💵", "کلن 👥"],
         ["راهنما ❓", "پشتیبانی 📞", "آیتم 💳"],
-        ["سولارپس ⭐", "شخصی سازی 🎨", "پدافند ها 🛡️"],
+        ["سولارپس", "شخصی سازی 🎨", "پدافند ها 🛡️"],
         ["بانک 🏦"],
     ]
     if user_id is not None and is_admin(user_id):
         keyboard.append(["پنل ادمین 🛠️"])
     return ReplyKeyboardMarkup(keyboard, resize_keyboard=True)
+
+
+def main_menu_premium_legend_text() -> str:
+    return (
+        "![👑](tg://emoji?id=5156877291397055163) گردونه\n"
+        "![🎁](tg://emoji?id=5215440433198413312) جایزه\n"
+        "![🪙](tg://emoji?id=5271655928695892247) معدن طلا\n"
+        "![🌟](tg://emoji?id=5064709487953183440) سولارپس"
+    )
+
+
+async def send_main_menu_premium_legend(update: Update) -> None:
+    if update.message is None:
+        return
+    try:
+        await update.message.reply_text(
+            main_menu_premium_legend_text(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            "گردونه\n"
+            "جایزه\n"
+            "معدن طلا\n"
+            "سولارپس"
+        )
 
 
 def starpass_menu_markup() -> ReplyKeyboardMarkup:
@@ -2263,13 +2291,14 @@ async def safe_edit_message(
     query,
     text: str,
     reply_markup: InlineKeyboardMarkup | None = None,
+    parse_mode: ParseMode | None = None,
 ) -> None:
     current_text = getattr(query.message, "text", None)
     current_markup = query.message.reply_markup
     if current_text == text and current_markup == reply_markup:
         return
     try:
-        await query.edit_message_text(text, reply_markup=reply_markup)
+        await query.edit_message_text(text, reply_markup=reply_markup, parse_mode=parse_mode)
     except Exception:
         return
 
@@ -2352,7 +2381,7 @@ def redline_wheel_markup() -> InlineKeyboardMarkup:
 def redline_wheel_text() -> str:
     rewards_lines = "\n".join(f"• {reward['label']}" for reward in REDLINE_WHEEL_REWARDS)
     return (
-        "🎡 گردونه: فالکون 🦅\n\n"
+        "![👑](tg://emoji?id=5156877291397055163) گردونه: فالکون 🦅\n\n"
         "💰 هزینه: ۱۰۰۰ سکه یا 💎 ۵ جم\n\n"
         "🎁 آیتم‌های ممکن:\n"
         f"{rewards_lines}\n\n"
@@ -2367,11 +2396,19 @@ async def wheel_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     if await reject_if_not_private(update):
         return
-    await update.message.reply_text(
-        "🎡 گردونه‌ها:\n"
-        "یکی از گزینه‌ها را انتخاب کنید.",
-        reply_markup=wheel_menu_markup(),
-    )
+    try:
+        await update.message.reply_text(
+            "![👑](tg://emoji?id=5156877291397055163) گردونه‌ها:\n"
+            "یکی از گزینه‌ها را انتخاب کنید.",
+            reply_markup=wheel_menu_markup(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            "گردونه‌ها:\n"
+            "یکی از گزینه‌ها را انتخاب کنید.",
+            reply_markup=wheel_menu_markup(),
+        )
 
 
 async def wheel_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -2384,10 +2421,21 @@ async def wheel_choice(update: Update, context: ContextTypes.DEFAULT_TYPE):
     text = (update.message.text or "").strip()
     if text == "فالکون 🦅":
         context.user_data["redline_wheel_payment"] = None
-        await update.message.reply_text(
-            redline_wheel_text(),
-            reply_markup=redline_wheel_markup(),
-        )
+        try:
+            await update.message.reply_text(
+                redline_wheel_text(),
+                reply_markup=redline_wheel_markup(),
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        except BadRequest:
+            await update.message.reply_text(
+                "گردونه: فالکون 🦅\n\n"
+                "💰 هزینه: ۱۰۰۰ سکه یا 💎 ۵ جم\n\n"
+                "🎁 آیتم‌های ممکن:\n"
+                + "\n".join(f"• {reward['label']}" for reward in REDLINE_WHEEL_REWARDS)
+                + "\n\n🔻 انتخاب کنید",
+                reply_markup=redline_wheel_markup(),
+            )
         return
     await update.message.reply_text(NOT_AVAILABLE_TEXT, reply_markup=wheel_menu_markup())
 
@@ -2415,11 +2463,21 @@ async def redline_wheel_action(update: Update, context: ContextTypes.DEFAULT_TYP
         return
     if query.data == "wheel_redline_pay_coins":
         context.user_data["redline_wheel_payment"] = "coins"
-        await safe_edit_message(query, redline_wheel_text(), redline_wheel_markup())
+        await safe_edit_message(
+            query,
+            redline_wheel_text(),
+            redline_wheel_markup(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         return
     if query.data == "wheel_redline_pay_gems":
         context.user_data["redline_wheel_payment"] = "gems"
-        await safe_edit_message(query, redline_wheel_text(), redline_wheel_markup())
+        await safe_edit_message(
+            query,
+            redline_wheel_text(),
+            redline_wheel_markup(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
         return
     payment = context.user_data.get("redline_wheel_payment")
     if payment not in {"coins", "gems"}:
@@ -2493,6 +2551,14 @@ async def back_to_main_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         "بازگشت به منوی اصلی 👇",
         reply_markup=main_menu_markup(update.effective_user.id if update.effective_user else None),
     )
+    await send_main_menu_premium_legend(update)
+    try:
+        await update.message.reply_text(
+            "![🏡](tg://emoji?id=5334953554681556547)",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        pass
 
 
 def bank_menu_markup() -> ReplyKeyboardMarkup:
@@ -3423,16 +3489,35 @@ async def gold_mine_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
     hourly_rate = GOLD_MINE_BASE_RATE * level
     stored = record.get("gold_mine_stored", 0)
     next_cost = gold_mine_upgrade_cost(level) if level < GOLD_MINE_MAX_LEVEL else None
-    await update.message.reply_text(
-        "⛏ معدن طلا\n"
+    premium_gold_mine_text = (
+        "![🪙](tg://emoji?id=5271655928695892247) معدن طلا\n"
         f"سطح معدن: {level}\n"
         f"سکه‌های آماده جمع‌آوری: {stored}\n"
         f"تولید هر ساعت: {hourly_rate} سکه\n"
         f"حداکثر نگهداری: {hourly_rate * GOLD_MINE_MAX_HOURS} سکه\n"
         f"{'هزینه ارتقا به سطح ' + str(level + 1) + ': ' + str(next_cost) + ' سکه' if next_cost is not None else '✅ معدن در بالاترین سطح است.'}\n\n"
-        "🔻 از منو انتخاب کنید",
-        reply_markup=gold_mine_menu_markup(),
+        "🔻 از منو انتخاب کنید"
     )
+    fallback_gold_mine_text = (
+        "معدن طلا\n"
+        f"سطح معدن: {level}\n"
+        f"سکه‌های آماده جمع‌آوری: {stored}\n"
+        f"تولید هر ساعت: {hourly_rate} سکه\n"
+        f"حداکثر نگهداری: {hourly_rate * GOLD_MINE_MAX_HOURS} سکه\n"
+        f"{'هزینه ارتقا به سطح ' + str(level + 1) + ': ' + str(next_cost) + ' سکه' if next_cost is not None else '✅ معدن در بالاترین سطح است.'}\n\n"
+        "🔻 از منو انتخاب کنید"
+    )
+    try:
+        await update.message.reply_text(
+            premium_gold_mine_text,
+            reply_markup=gold_mine_menu_markup(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            fallback_gold_mine_text,
+            reply_markup=gold_mine_menu_markup(),
+        )
 
 
 async def gold_mine_collect(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -3639,13 +3724,29 @@ async def coin_transfer_menu(update: Update, context: ContextTypes.DEFAULT_TYPE)
     today = datetime.now().date().isoformat()
     reset_daily_transfer_if_needed(record, today)
     remaining = COIN_TRANSFER_DAILY_LIMIT - record.get("daily_coin_transfer", 0)
-    await update.message.reply_text(
-        "💵 تبادل سکه\n"
+    premium_coin_menu_text = (
+        "![💰](tg://emoji?id=5213094908608392768) تبادل سکه\n"
         "آیدی عددی گیرنده را وارد کنید:\n"
         f"سقف انتقال امروز: {COIN_TRANSFER_DAILY_LIMIT} سکه\n"
-        f"باقی‌مانده امروز: {remaining} سکه",
-        reply_markup=coin_transfer_markup(),
+        f"باقی‌مانده امروز: {remaining} سکه"
     )
+    fallback_coin_menu_text = (
+        "تبادل سکه\n"
+        "آیدی عددی گیرنده را وارد کنید:\n"
+        f"سقف انتقال امروز: {COIN_TRANSFER_DAILY_LIMIT} سکه\n"
+        f"باقی‌مانده امروز: {remaining} سکه"
+    )
+    try:
+        await update.message.reply_text(
+            premium_coin_menu_text,
+            parse_mode=ParseMode.MARKDOWN_V2,
+            reply_markup=coin_transfer_markup(),
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            fallback_coin_menu_text,
+            reply_markup=coin_transfer_markup(),
+        )
 
 
 async def handle_coin_transfer_input(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7560,11 +7661,19 @@ async def starpass_menu(update: Update, context: ContextTypes.DEFAULT_TYPE):
         return
     record = get_user_record(update.effective_user.id)
     status = "✅ خریداری شده" if record["starpass_active"] else "❌ شما هنوز سولارپس را نخریده‌اید."
-    await update.message.reply_text(
-        "⭐ منوی سولارپس\n"
-        f"{status}",
-        reply_markup=starpass_menu_markup(),
-    )
+    try:
+        await update.message.reply_text(
+            "![🌟](tg://emoji?id=5064709487953183440) منوی سولارپس\n"
+            f"{status}",
+            reply_markup=starpass_menu_markup(),
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text(
+            "منوی سولارپس\n"
+            f"{status}",
+            reply_markup=starpass_menu_markup(),
+        )
 
 
 async def starpass_purchase(update: Update, context: ContextTypes.DEFAULT_TYPE):
@@ -7672,12 +7781,24 @@ async def daily_reward(update: Update, context: ContextTypes.DEFAULT_TYPE):
     record = get_user_record(update.effective_user.id)
     today = datetime.now().date().isoformat()
     if record["last_daily_reward"] == today:
-        await update.message.reply_text("🎁 جایزه روزانه امروزت رو قبلاً گرفتی.")
+        try:
+            await update.message.reply_text(
+                "![🎁](tg://emoji?id=5215440433198413312) جایزه روزانه امروزت رو قبلاً گرفتی.",
+                parse_mode=ParseMode.MARKDOWN_V2,
+            )
+        except BadRequest:
+            await update.message.reply_text("جایزه روزانه امروزت رو قبلاً گرفتی.")
         return
     record["coins"] += 500
     record["last_daily_reward"] = today
     save_user_data_store()
-    await update.message.reply_text("✅ 500 سکه جایزه روزانه بهت اضافه شد.")
+    try:
+        await update.message.reply_text(
+            "![🎁](tg://emoji?id=5215440433198413312) 500 سکه جایزه روزانه بهت اضافه شد.",
+            parse_mode=ParseMode.MARKDOWN_V2,
+        )
+    except BadRequest:
+        await update.message.reply_text("✅ 500 سکه جایزه روزانه بهت اضافه شد.")
 
 
 async def admin_only_reply(update: Update, text: str):
@@ -8805,7 +8926,7 @@ def main():
     app.add_handler(
         CallbackQueryHandler(starpass_purchase_confirm, pattern="^starpass_purchase_")
     )
-    app.add_handler(MessageHandler(filters.Regex("^گردونه 🎡$"), wheel_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^گردونه( 🎡| 👑)?$"), wheel_menu))
     app.add_handler(MessageHandler(filters.Regex("^فالکون 🦅$"), wheel_choice))
     app.add_handler(MessageHandler(filters.Regex("^حمله جهانی 🌐$"), global_attack_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی اصلی ↩️$"), back_to_main_menu))
@@ -8819,7 +8940,7 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^ارتقا بانک ⬆️$"), bank_upgrade))
     app.add_handler(MessageHandler(filters.Regex("^تبادل( سکه)? (💵|💸)$"), coin_transfer_menu))
     app.add_handler(MessageHandler(filters.Regex("^کلن 👥$"), clan_menu))
-    app.add_handler(MessageHandler(filters.Regex("^معدن طلا ⛏️$"), gold_mine_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^معدن طلا( ⛏️| 🪙)?$"), gold_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^معدن جم 💎$"), gem_mine_menu))
     app.add_handler(MessageHandler(filters.Regex("^افزایش موجودی 🔁$"), topup_menu))
     app.add_handler(MessageHandler(filters.Regex("^ارسال رسید 🧾$"), topup_receipt_menu))
@@ -8860,14 +8981,14 @@ def main():
     app.add_handler(MessageHandler(filters.Regex("^هسته‌ای 💰"), nuclear_purchase_prompt))
     app.add_handler(MessageHandler(filters.Regex("^خروج از خرید ◀️$"), back_to_main_menu))
     app.add_handler(MessageHandler(filters.Regex("^بازگشت به منوی فروشگاه ↩️$"), back_to_shop))
-    app.add_handler(MessageHandler(filters.Regex("^(جایزه روزانه|جایزه) 🎁$"), daily_reward))
+    app.add_handler(MessageHandler(filters.Regex(r"^(جایزه روزانه|جایزه)( 🎁)?$"), daily_reward))
     app.add_handler(MessageHandler(filters.Regex("^رنکینگ 🏆$"), ranking_menu))
     app.add_handler(CommandHandler("rank_info", rank_info))
     app.add_handler(MessageHandler(filters.Regex("^جمع‌آوری سکه 💰$"), gold_mine_collect))
     app.add_handler(MessageHandler(filters.Regex("^جمع‌آوری جم 💎$"), gem_mine_collect))
     app.add_handler(MessageHandler(filters.Regex("^ارتقای معدن ⛏️$"), gold_mine_upgrade))
     app.add_handler(MessageHandler(filters.Regex("^پشتیبانی 📞$"), support_menu))
-    app.add_handler(MessageHandler(filters.Regex("^سولارپس ⭐$"), starpass_menu))
+    app.add_handler(MessageHandler(filters.Regex(r"^سولارپس( ⭐| 🌟)?$"), starpass_menu))
     app.add_handler(MessageHandler(filters.Regex("^خرید سولارپس 🛒$"), starpass_purchase))
     app.add_handler(MessageHandler(filters.Regex("^دریافت جوایز 🎁$"), starpass_rewards))
     app.add_handler(MessageHandler(filters.Regex("^شخصی سازی 🎨$"), customization_menu))
